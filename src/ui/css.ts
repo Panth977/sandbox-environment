@@ -81,8 +81,8 @@ export const TOKENS_CSS: string = `
 }
 `;
 
-/** Base element styles (zero specificity) and the kit's classes. */
-export const BASE_CSS: string = `
+/** Base element styles (zero specificity): typography, links, code, focus. For artifact documents. */
+export const ELEMENT_CSS: string = `
 :where(html) {
   background: var(--sbx-bg); color: var(--sbx-text);
   font-family: var(--sbx-font); font-size: var(--sbx-font-size); line-height: 1.5;
@@ -111,6 +111,11 @@ export const BASE_CSS: string = `
 ::selection { background: color-mix(in srgb, var(--sbx-accent) 40%, transparent); }
 :where(dialog)::backdrop { background: var(--sbx-overlay); }
 
+`;
+
+/** The kit's classes (.sbx-*) and pre-upgrade rules. Safe on any page. */
+export const BASE_CSS: string = `
+[hidden] { display: none !important; }
 /* text */
 .sbx-muted { color: var(--sbx-muted); } .sbx-subtle { color: var(--sbx-subtle); }
 .sbx-danger-text { color: var(--sbx-danger); } .sbx-success-text { color: var(--sbx-success); }
@@ -277,8 +282,11 @@ sbx-dialog:not(:defined), sbx-tooltip:not(:defined) > [slot] { display: none; }
 }
 `;
 
-/** Tokens + base + classes. */
-export const KIT_CSS: string = TOKENS_CSS + BASE_CSS;
+/** Tokens + element styles + classes: everything, for an artifact's own document. */
+export const KIT_CSS: string = TOKENS_CSS + ELEMENT_CSS + BASE_CSS;
+
+/** Tokens + classes only: for host pages that have their own base styles. */
+export const HOST_CSS: string = TOKENS_CSS + BASE_CSS;
 
 /** Shared styles for the custom elements' shadow roots (they read the tokens above). */
 export const SHADOW_BASE_CSS: string = `
