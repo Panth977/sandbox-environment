@@ -55,8 +55,19 @@ export function place(pop: HTMLElement, anchor: Element, placement: Placement = 
   if (matchWidth) pop.style.minWidth = `${Math.round(a.width)}px`;
   const p = pop.getBoundingClientRect();
   const vw = document.documentElement.clientWidth;
-  const vh = document.documentElement.clientHeight;
+  let vh = document.documentElement.clientHeight;
   let [side, align] = placement.split("-") as [string, string | undefined];
+  // In an auto-sized sandbox frame the viewport is only as tall as the content:
+  // instead of flipping a dropdown upward, make the document taller so the
+  // host grows the frame (see growFor / Popup.hide).
+  const framed = typeof window !== "undefined" && window.parent !== window;
+  if (framed && side === "bottom" && a.bottom + gap + p.height > vh) {
+    const need = Math.ceil(a.bottom + gap + p.height + 8 + scrollY);
+    const root = document.documentElement;
+    if (!root.dataset.sbxGrow) root.dataset.sbxGrow = root.style.minHeight || "-";
+    root.style.minHeight = `${need}px`;
+    vh = Math.max(vh, need - scrollY);
+  }
   if (side === "bottom" && a.bottom + gap + p.height > vh && a.top - gap - p.height >= 0) side = "top";
   else if (side === "top" && a.top - gap - p.height < 0 && a.bottom + gap + p.height <= vh) side = "bottom";
   if (side === "right" && a.right + gap + p.width > vw) side = "left";
@@ -77,6 +88,7 @@ export function place(pop: HTMLElement, anchor: Element, placement: Placement = 
   pop.dataset.side = side;
 }
 
+let openPopups = 0;
 const hasPopover = typeof HTMLElement !== "undefined" && "showPopover" in HTMLElement.prototype;
 
 /**
@@ -114,6 +126,7 @@ export class Popup {
   show(): void {
     if (this.open) return;
     this.open = true;
+    openPopups++;
     if (hasPopover) this.el.showPopover();
     else this.el.style.display = "block";
     this.reposition();
@@ -125,6 +138,7 @@ export class Popup {
   hide(): void {
     if (!this.open) return;
     this.open = false;
+    openPopups--;
     if (hasPopover) {
       try {
         this.el.hidePopover();
@@ -133,6 +147,11 @@ export class Popup {
     removeEventListener("scroll", this.reposition, true);
     removeEventListener("resize", this.reposition);
     document.removeEventListener("pointerdown", this.outside, true);
+    const root = document.documentElement;
+    if (root.dataset.sbxGrow && openPopups === 0) {
+      root.style.minHeight = root.dataset.sbxGrow === "-" ? "" : root.dataset.sbxGrow;
+      delete root.dataset.sbxGrow;
+    }
     this.onClose();
   }
 

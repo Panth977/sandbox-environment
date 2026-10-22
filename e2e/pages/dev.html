@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>e2e: dev engine</title>
+<style>html,body{margin:0;height:100%} #ide{height:100vh;padding:8px;box-sizing:border-box}</style></head>
+<body>
+<div id="ide"></div>
+<script type="module">
+import { mountDev } from "/dist/dev/mod.js";
+
+const R = (window.__results = { done: false, builds: [] });
+const hostTypes = `
+declare module "@panth977/sandbox/artifact" {
+  interface HostApi {
+    devices: {
+      /** Devices the viewer can see. */
+      list(q?: { orgId?: string }): Promise<{ id: string; name: string; pm25: number }[]>;
+    };
+  }
+}`;
+const files = {
+  "/manifest.json": JSON.stringify({ name: "Dev demo", dependencies: { react: "19", "react-dom": "19" } }, null, 2),
+  "/index.tsx": `import { createRoot } from "react-dom/client";
+import { App } from "./App";
+
+createRoot(document.getElementById("root")!).render(<App />);
+`,
+  "/App.tsx": `import { useEffect, useState } from "react";
+import { host } from "@panth977/sandbox/artifact";
+
+type Device = { id: string; name: string; pm25: number };
+
+export function App() {
+  const [rows, setRows] = useState<Device[]>([]);
+  useEffect(() => { host.devices.list().then(setRows); }, []);
+  const total: number = "not a number";
+  return (
+    <main className="sbx-page">
+      <h1 id="h">{rows.length} devices</h1>
+      <sbx-chart type="bar" x="name" y="pm25" data={rows} />
+    </main>
+  );
+}
+`,
+};
+
+const dev = mountDev(document.getElementById("ide"), {
+  files,
+  hostTypes,
+  api: { devices: { list: async () => [{ id: "a", name: "A", pm25: 10 }, { id: "b", name: "B", pm25: 30 }] } },
+  onBuild: (r) => R.builds.push(r.ok),
+});
+window.__dev = dev;
+R.mounted = true;
+R.done = true;
+</script>
+</body>
+</html>

@@ -40,7 +40,12 @@ export interface UseStreamResult<T> {
   error: Error | undefined;
 }
 
-export function createHooks(R: HookLib) {
+export interface Hooks {
+  useCall<T>(fn: () => Promise<T>, deps: readonly unknown[]): UseCallResult<T>;
+  useStream<T>(open: () => AsyncIterable<T>, deps: readonly unknown[], o?: { keep?: number }): UseStreamResult<T>;
+}
+
+export function createHooks(R: HookLib): Hooks {
   /** Runs an async call when `deps` change; latest call wins. */
   function useCall<T>(fn: () => Promise<T>, deps: readonly unknown[]): UseCallResult<T> {
     const [state, setState] = R.useState<{ data: T | undefined; error: Error | undefined; loading: boolean }>({

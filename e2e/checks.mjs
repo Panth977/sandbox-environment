@@ -51,3 +51,81 @@ CHECKS.compile = async function (r, expect, page) {
   const val = await react.locator("#sel").evaluate((el) => el.value);
   expect(val === "D2", `sbx-select inside React picks value (${val})`);
 };
+
+CHECKS.dev = async function (r, expect, page) {
+  expect(r.mounted, "dev engine mounted");
+  // first build + preview
+  await page.waitForFunction(() => window.__results.builds.length > 0, null, { timeout: 60000 }).catch(() => {});
+  const r2 = await page.evaluate(() => window.__results);
+  expect(r2.builds[0] === true, `first build ok (${r2.builds})`);
+  const frame = page.frameLocator(".sbx-dev__preview iframe");
+  const h = await frame.locator("#h").textContent({ timeout: 30000 }).catch(() => null);
+  expect(h === "2 devices", `preview renders host data (${h})`);
+  // TypeScript diagnostics (TS + libs + @types/react fetched from CDNs)
+  const problem = await page.waitForFunction(() => {
+    const t = document.querySelector(".sbx-dev__list")?.textContent ?? "";
+    return t.includes("not assignable to type 'number'") ? t : null;
+  }, null, { timeout: 90000 }).then((x) => x.jsonValue()).catch(() => null);
+  expect(!!problem, "TS type error listed in Problems");
+  const leftover = await page.evaluate(() => document.querySelector(".sbx-dev__list")?.textContent ?? "");
+  expect(!/Cannot find module|JSX element implicitly|IntrinsicElements/.test(leftover), `no bogus module/JSX errors: ${leftover.slice(0, 400)}`);
+  // completions for the host API (types from hostTypes)
+  const items = await page.evaluate(async () => {
+    window.__dev.openFile("/App.tsx");
+    const ed = document.querySelector("sbx-editor");
+    const src = ed.value;
+    const pos = src.indexOf("host.devices.") + "host.devices.".length;
+    const res = await ed.completions(pos, src);
+    return res?.items.map((i) => i.label) ?? [];
+  });
+  expect(items.includes("list"), `completions for host.devices. (${items.slice(0, 10)})`);
+  // edit → rebuild → preview updates
+  await page.evaluate(() => window.__dev.setFile("/App.tsx", window.__dev.files()["/App.tsx"].replace("devices</h1>", "sensors</h1>")));
+  const h2 = await page.waitForFunction(async () => true, null, { timeout: 1000 }).then(() =>
+    page.frameLocator(".sbx-dev__preview iframe").locator("#h").filter({ hasText: "sensors" }).textContent({ timeout: 20000 })).catch(() => null);
+  expect(h2 === "2 sensors", `rebuild after edit (${h2})`);
+};
+
+CHECKS.ui = async function (r, expect, page) {
+  expect(r.galleryReady, "gallery rendered");
+  expect(!r.errors.length, `errors: ${r.errors}`);
+  const f = page.frameLocator("#slot iframe");
+  // select: open, search, pick
+  await f.locator("#org").click();
+  await f.locator("#org .search").fill("pu");
+  await f.locator("#org .item").first().click();
+  expect(await f.locator("#org").evaluate((el) => el.value) === "pune", "select search + pick");
+  // multi-select
+  await f.locator("#types").click();
+  await f.locator("#types .item").nth(0).click();
+  await f.locator("#types .item").nth(2).click();
+  await f.locator("#types").press("Escape");
+  const multi = await f.locator("#types").evaluate((el) => el.value.join(","));
+  expect(multi === "polludrone,odosense", `multi select (${multi})`);
+  // table sort + select
+  for (let i = 0; i < 3; i++) {
+    const sort = await f.locator("sbx-table th", { hasText: "PM2.5" }).getAttribute("aria-sort");
+    if (sort === "descending") break;
+    await f.locator("sbx-table th", { hasText: "PM2.5" }).click();
+    await page.waitForTimeout(100);
+  }
+  const first = await f.locator("sbx-table tbody tr td:nth-child(2)").first().textContent();
+  expect(first === "DEL-11", `table sorts desc (${first})`);
+  // tabs + chart
+  await f.locator("sbx-tabs button", { hasText: "Charts" }).click();
+  const bars = await f.locator("#bar").evaluate((el) => el.shadowRoot.querySelectorAll("rect[rx]").length);
+  expect(bars === 4, `bar chart bars (${bars})`);
+  const paths = await f.locator("#pie").evaluate((el) => el.shadowRoot.querySelectorAll("path").length);
+  expect(paths === 3, `donut slices (${paths})`);
+  // menu + toast
+  await f.locator("sbx-menu [slot=trigger]").click();
+  await f.locator("sbx-menu .item", { hasText: "Share" }).click();
+  const toastText = await f.locator("sbx-toaster").evaluate((el) => el.shadowRoot.textContent);
+  expect(toastText.includes("Menu: share"), `menu select → toast (${toastText})`);
+  // dialog via keyboard
+  await f.locator("sbx-tabs button", { hasText: "Feedback" }).click();
+  await f.locator("#d1").click();
+  expect(await f.locator("#dlg").evaluate((el) => el.open), "dialog opens");
+  await f.locator("#dlg").press("Escape");
+  expect(!(await f.locator("#dlg").evaluate((el) => el.open)), "Esc closes dialog");
+};

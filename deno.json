@@ -15,23 +15,48 @@
     "./ui": "./src/ui/index.ts",
     "./compiler": "./src/compiler/mod.ts",
     "./editor": "./src/editor/editor.ts",
-    "./dev": "./src/dev/mod.ts"
+    "./dev": "./src/dev/mod.ts",
+    "./dev/language-worker": "./src/dev/language-worker.ts",
+    "./compiler/worker": "./src/compiler/worker.ts",
+    "./cli": "./src/compiler/cli.ts"
   },
   "publish": {
-    "include": ["src/**/*.ts", "README.md", "LICENSE"],
-    "exclude": ["src/**/*.test.ts"]
+    "include": [
+      "src/**/*.ts",
+      "README.md",
+      "LICENSE"
+    ],
+    "exclude": [
+      "src/**/*.test.ts"
+    ]
   },
   "compilerOptions": {
     "strict": true,
-    "lib": ["dom", "dom.iterable", "dom.asynciterable", "esnext", "deno.ns"]
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "dom.asynciterable",
+      "esnext",
+      "deno.ns"
+    ]
   },
-  "fmt": { "lineWidth": 140 },
-  "lint": { "rules": { "exclude": ["no-explicit-any"] } },
+  "fmt": {
+    "lineWidth": 140
+  },
+  "lint": {
+    "rules": {
+      "exclude": [
+        "no-explicit-any"
+      ]
+    }
+  },
   "tasks": {
     "gen": "node scripts/gen.mjs",
     "check": "deno check src/",
     "test": "node --experimental-strip-types --no-warnings --test --test-timeout=10000 test/*.test.ts",
     "e2e": "node e2e/run.mjs",
-    "build": "node scripts/build.mjs"
+    "build": "node scripts/build.mjs",
+    "deps": "node scripts/check-deps.mjs",
+    "ci": "node scripts/gen.mjs --check && node scripts/check-deps.mjs && deno check src/ && deno task test && node scripts/build.mjs"
   }
 }

@@ -11,7 +11,7 @@
  * @module
  */
 
-const LIGHT = `
+const LIGHT: string = `
   --sbx-bg: #f7f6f3;
   --sbx-surface: #ffffff;
   --sbx-surface-2: #f1efeb;
@@ -37,7 +37,7 @@ const LIGHT = `
   --sbx-c5: #8b5cf6; --sbx-c6: #0e9aa7; --sbx-c7: #d6409f; --sbx-c8: #7a6f62;
 `;
 
-const DARK = `
+const DARK: string = `
   --sbx-bg: #151413;
   --sbx-surface: #1c1b19;
   --sbx-surface-2: #252320;
@@ -64,7 +64,7 @@ const DARK = `
 `;
 
 /** Tokens only (light, dark, system). Useful for host pages that want the same palette. */
-export const TOKENS_CSS = `
+export const TOKENS_CSS: string = `
 :root {
   color-scheme: light;
   ${LIGHT}
@@ -82,13 +82,14 @@ export const TOKENS_CSS = `
 `;
 
 /** Base element styles (zero specificity) and the kit's classes. */
-export const BASE_CSS = `
+export const BASE_CSS: string = `
 :where(html) {
   background: var(--sbx-bg); color: var(--sbx-text);
   font-family: var(--sbx-font); font-size: var(--sbx-font-size); line-height: 1.5;
   -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%;
 }
 :where(*, *::before, *::after) { box-sizing: border-box; }
+[hidden] { display: none !important; }
 :where(body) { margin: 0; }
 :where(h1, h2, h3, h4, h5, h6) { margin: 0 0 .5em; line-height: 1.25; font-weight: 600; letter-spacing: -0.01em; }
 :where(h1) { font-size: 1.75rem; } :where(h2) { font-size: 1.375rem; } :where(h3) { font-size: 1.125rem; }
@@ -280,7 +281,9 @@ sbx-dialog:not(:defined), sbx-tooltip:not(:defined) > [slot] { display: none; }
 export const KIT_CSS: string = TOKENS_CSS + BASE_CSS;
 
 /** Shared styles for the custom elements' shadow roots (they read the tokens above). */
-export const SHADOW_BASE_CSS = `
+export const SHADOW_BASE_CSS: string = `
+[hidden] { display: none !important; }
+:host([hidden]) { display: none !important; }
 :host { font-family: var(--sbx-font); font-size: 13px; color: var(--sbx-text); }
 * { box-sizing: border-box; }
 button { font: inherit; color: inherit; }
