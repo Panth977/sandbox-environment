@@ -1,0 +1,95 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>e2e: render engine</title></head>
+<body>
+<div id="slot" style="width:600px"></div>
+<div id="slot2"></div>
+<script type="module">
+import { mount, scopes, audit } from "/dist/host/mod.js";
+
+const R = (window.__results = { done: false, log: [], errors: [], console: [], audit: [] });
+const origin = location.origin;
+
+const artifactSrc = `
+import { host, expose, env, onTheme, theme } from "@panth977/sandbox/artifact";
+import { toast } from "@panth977/sandbox/ui";
+const out = {};
+try {
+  out.sum = await host.math.add(2, 3);
+  out.devices = await host.devices.list({ orgId: env.orgId });
+  out.stream = [];
+  for await (const v of host.live.count(5)) out.stream.push(v);
+  let ticks = 0;
+  const off = await host.onTick(() => ticks++);
+  await new Promise((r) => setTimeout(r, 60));
+  await off();
+  out.ticks = ticks;
+  try { await host.devices.remove("d1"); out.denied = false; } catch (e) { out.denied = e.code; }
+  try { await host.secret(); } catch (e) { out.secret = e.code; }
+  try { await fetch("${origin}/echo"); out.fetchAllowed = true; } catch { out.fetchAllowed = false; }
+  try { await fetch("https://example.com/"); out.fetchOther = true; } catch { out.fetchOther = false; }
+  out.storage = (() => { try { localStorage.setItem("x", "1"); return "open"; } catch { return "blocked"; } })();
+  out.cookie = (() => { try { return document.cookie; } catch { return "blocked"; } })();
+  out.parentDom = (() => { try { return parent.document.title; } catch { return "blocked"; } })();
+  out.origin = self.origin;
+  out.defined = ["sbx-select", "sbx-menu", "sbx-dialog", "sbx-tabs", "sbx-switch", "sbx-tooltip", "sbx-table", "sbx-chart"].filter((t) => customElements.get(t));
+  out.themeMode = theme().mode;
+  out.accentVar = getComputedStyle(document.documentElement).getPropertyValue("--sbx-accent").trim();
+  onTheme((t) => host.report({ themeChanged: t.mode }));
+  document.getElementById("root").innerHTML = '<button class="sbx-btn sbx-btn--primary">Hi</button><div style="height:300px"></div>';
+  toast("hello");
+  console.log("artifact says", { a: 1 });
+  expose({ getState: () => ({ ready: true, n: out.stream.length }) });
+} catch (e) {
+  out.fatal = String(e && e.stack || e);
+}
+await host.report(out);
+setTimeout(() => { throw new Error("boom from artifact"); }, 10);
+`;
+
+const artifact = {
+  protocol: 1,
+  entry: "sbx:/index.js",
+  modules: { "sbx:/index.js": artifactSrc },
+  css: ["body { font-size: 15px }"],
+  imports: {},
+  manifest: { name: "e2e", network: [origin] },
+};
+
+let tick = null;
+const handle = mount(document.getElementById("slot"), {
+  artifact,
+  env: { orgId: "o7" },
+  theme: { mode: "dark" },
+  network: [origin],
+  middleware: [
+    audit((e) => R.audit.push(e.path.join(".") + ":" + e.ok)),
+    scopes({ "math.*": null, "devices.list": "devices:read", "devices.*": "devices:write", "live.*": null, onTick: null, report: null }, ["devices:read"]),
+  ],
+  api: {
+    math: { add: (a, b) => a + b },
+    devices: { list: async (q) => [{ id: "d1", org: q.orgId }], remove: async () => "removed" },
+    live: { async *count(n) { for (let i = 0; i < n; i++) yield i; } },
+    onTick: (cb) => { tick = setInterval(() => cb(), 10); return () => clearInterval(tick); },
+    secret: () => "nope",
+    report: (o) => { Object.assign(R, o); R.reported = true; },
+  },
+  onConsole: (e) => R.console.push(e.level + ":" + e.args.join(" ")),
+  onError: (e) => R.errors.push(e.message),
+  onResize: (h) => (R.height = h),
+});
+
+await handle.ready;
+R.readyResolved = true;
+await new Promise((r) => setTimeout(r, 300));
+R.exposed = await handle.remote.getState();
+await handle.setTheme({ mode: "light" });
+await new Promise((r) => setTimeout(r, 100));
+R.iframeHeight = handle.iframe.style.height;
+R.sandboxAttr = handle.iframe.getAttribute("sandbox");
+handle.destroy();
+R.afterDestroy = document.querySelectorAll("#slot iframe").length;
+R.done = true;
+</script>
+</body>
+</html>

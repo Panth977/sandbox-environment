@@ -1,0 +1,93 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>e2e: compile in browser + mount</title></head>
+<body>
+<div id="react" style="width:600px"></div>
+<div id="svelte" style="width:600px"></div>
+<script type="module">
+import { compile } from "/dist/compiler/mod.js";
+import { mount } from "/dist/host/mod.js";
+
+const R = (window.__results = { done: false, errors: [], diagnostics: {} });
+
+const api = {
+  devices: { list: async () => [{ id: "D1", name: "Ahmedabad 1", pm25: 41 }, { id: "D2", name: "Pune 4", pm25: 88 }] },
+  report: (k, v) => { R[k] = v; },
+};
+
+const reactFiles = {
+  "/manifest.json": JSON.stringify({ name: "React artifact", dependencies: { react: "19", "react-dom": "19" } }),
+  "/index.tsx": `
+import * as React from "react";
+import { createRoot } from "react-dom/client";
+import { host } from "@panth977/sandbox/artifact";
+import { createHooks } from "@panth977/sandbox/react";
+import { App } from "./App";
+const hooks = createHooks(React);
+createRoot(document.getElementById("root")!).render(<App hooks={hooks} />);
+`,
+  "/App.tsx": `
+import { host } from "@panth977/sandbox/artifact";
+type Device = { id: string; name: string; pm25: number };
+export function App({ hooks }: { hooks: any }) {
+  const { data, loading } = hooks.useCall(() => (host as any).devices.list() as Promise<Device[]>, []);
+  if (loading) return <p>Loading…</p>;
+  (host as any).report("reactRows", data.length);
+  return (
+    <main className="sbx-page sbx-stack">
+      <h1 id="title">Devices</h1>
+      <sbx-select id="sel" placeholder="Pick">{data.map((d: Device) => <option key={d.id} value={d.id}>{d.name}</option>)}</sbx-select>
+      <ul>{data.map((d: Device) => <li key={d.id}>{d.name}: {d.pm25}</li>)}</ul>
+    </main>
+  );
+}
+`,
+};
+
+const svelteFiles = {
+  "/manifest.json": JSON.stringify({ name: "Svelte artifact", dependencies: { svelte: "5" } }),
+  "/index.js": `
+import { mount } from "svelte";
+import App from "./App.svelte";
+mount(App, { target: document.getElementById("root") });
+`,
+  "/App.svelte": `
+<script>
+  import { host } from "@panth977/sandbox/artifact";
+  import { call } from "@panth977/sandbox/stores";
+  const devices = call(() => host.devices.list());
+  let clicks = $state(0);
+  $effect(() => { if ($devices.data) host.report("svelteRows", $devices.data.length); });
+<\/script>
+<main class="sbx-page">
+  <h1>Svelte {$devices.data?.length ?? "…"}</h1>
+  <button class="sbx-btn sbx-btn--primary" id="b" onclick={() => { clicks++; host.report("svelteClicks", clicks); }}>Clicked {clicks}</button>
+</main>
+<style>h1 { color: rgb(1, 2, 3); }</style>
+`,
+};
+
+async function run(name, files, el) {
+  const t0 = performance.now();
+  const r = await compile(files);
+  R[name + "CompileMs"] = Math.round(performance.now() - t0);
+  R.diagnostics[name] = r.diagnostics.filter((d) => d.severity === "error").map((d) => `${d.file}:${d.line}: ${d.message}`);
+  if (!r.ok) return null;
+  const h = mount(el, { artifact: r.artifact, api, onError: (e) => R.errors.push(name + ": " + e.message), bootTimeoutMs: 60000 });
+  await h.ready;
+  return h;
+}
+
+try {
+  const [hr, hs] = await Promise.all([run("react", reactFiles, document.getElementById("react")), run("svelte", svelteFiles, document.getElementById("svelte"))]);
+  R.reactMounted = !!hr;
+  R.svelteMounted = !!hs;
+  // let React render after the call resolves
+  for (let i = 0; i < 100 && (R.reactRows === undefined || R.svelteRows === undefined); i++) await new Promise((r) => setTimeout(r, 100));
+} catch (e) {
+  R.fatal = String(e && e.stack || e);
+}
+R.done = true;
+</script>
+</body>
+</html>

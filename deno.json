@@ -1,0 +1,37 @@
+{
+  "name": "@panth977/sandbox",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/mod.ts",
+    "./host": "./src/host/mod.ts",
+    "./svelte": "./src/host/svelte.ts",
+    "./bridge": "./src/bridge.ts",
+    "./middleware": "./src/middleware.ts",
+    "./protocol": "./src/protocol.ts",
+    "./artifact": "./src/artifact/artifact.ts",
+    "./stores": "./src/artifact/stores.ts",
+    "./react": "./src/artifact/react.ts",
+    "./ui": "./src/ui/index.ts",
+    "./compiler": "./src/compiler/mod.ts",
+    "./editor": "./src/editor/editor.ts",
+    "./dev": "./src/dev/mod.ts"
+  },
+  "publish": {
+    "include": ["src/**/*.ts", "README.md", "LICENSE"],
+    "exclude": ["src/**/*.test.ts"]
+  },
+  "compilerOptions": {
+    "strict": true,
+    "lib": ["dom", "dom.iterable", "dom.asynciterable", "esnext", "deno.ns"]
+  },
+  "fmt": { "lineWidth": 140 },
+  "lint": { "rules": { "exclude": ["no-explicit-any"] } },
+  "tasks": {
+    "gen": "node scripts/gen.mjs",
+    "check": "deno check src/",
+    "test": "node --experimental-strip-types --no-warnings --test --test-timeout=10000 test/*.test.ts",
+    "e2e": "node e2e/run.mjs",
+    "build": "node scripts/build.mjs"
+  }
+}
