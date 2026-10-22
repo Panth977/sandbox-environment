@@ -142,6 +142,42 @@ test("streams: breaking out cancels the producer", async () => {
   close();
 });
 
+test("streams: cancelling an idle live stream closes the producer", async () => {
+  let closed = false;
+  let push: ((v: number) => void) | null = null;
+  const api = {
+    live(): AsyncIterable<number> {
+      const queue: number[] = [];
+      let wake: (() => void) | null = null;
+      push = (v) => (queue.push(v), wake?.());
+      return {
+        [Symbol.asyncIterator]: () => ({
+          next: async () => {
+            while (!queue.length) await new Promise<void>((r) => (wake = r));
+            return { value: queue.shift()!, done: false };
+          },
+          return: async () => ((closed = true), { value: undefined, done: true }),
+        }),
+      };
+    },
+  };
+  const { a, close } = pair(api);
+  const got: number[] = [];
+  const run = (async () => {
+    for await (const v of (a.remote as any).live()) {
+      got.push(v);
+      if (got.length === 1) break;
+    }
+  })();
+  await sleep(10);
+  push!(1);
+  await run;
+  await sleep(20);
+  assert.deepEqual(got, [1]);
+  assert.equal(closed, true);
+  close();
+});
+
 test("streams: ReadableStream result and toReadableStream()", async () => {
   const { a, close } = pair(hostImpl());
   const s = await a.remote.readable(3);

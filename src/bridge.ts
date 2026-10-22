@@ -280,7 +280,10 @@ export function createEndpoint<R extends object = Record<string, never>, L exten
   // Callbacks this side handed out, by reference.
   const localFns = new Map<number, Fn>();
   // Calls the other side made and this side is serving.
-  const serving = new Map<number, { ac: AbortController; credit: number; wake: (() => void) | null; cancelled: boolean }>();
+  const serving = new Map<
+    number,
+    { ac: AbortController; credit: number; wake: (() => void) | null; cancelled: boolean; it?: AsyncIterator<unknown> }
+  >();
 
   const send = (m: RpcMessage) => {
     if (!closed) port.postMessage(m);
@@ -402,7 +405,13 @@ export function createEndpoint<R extends object = Record<string, never>, L exten
   }
 
   async function serve(m: Extract<RpcMessage, { t: "call" }>) {
-    const state = { ac: new AbortController(), credit: 0, wake: null as (() => void) | null, cancelled: false };
+    const state = {
+      ac: new AbortController(),
+      credit: 0,
+      wake: null as (() => void) | null,
+      cancelled: false,
+      it: undefined as AsyncIterator<unknown> | undefined,
+    };
     serving.set(m.id, state);
     const isCallback = typeof m.ref === "number";
     const path = Array.isArray(m.path) ? m.path.map(String) : [];
@@ -428,7 +437,8 @@ export function createEndpoint<R extends object = Record<string, never>, L exten
       if (state.cancelled) return;
       if (isStreamLike(result)) {
         send({ $sbx: PROTOCOL, t: "ok", id: m.id, v: { $sbxStream: m.id } });
-        await pump(m.id, state, iteratorOf(result));
+        state.it = iteratorOf(result);
+        await pump(m.id, state, state.it);
       } else {
         send({ $sbx: PROTOCOL, t: "ok", id: m.id, v: encode(result) });
       }
@@ -530,6 +540,8 @@ export function createEndpoint<R extends object = Record<string, never>, L exten
           const w = s.wake;
           s.wake = null;
           w?.();
+          // The producer may be waiting for its next value (a live subscription): close it now.
+          if (s.it) Promise.resolve().then(() => s.it?.return?.()).catch(() => {});
         }
         break;
       }
@@ -560,6 +572,7 @@ export function createEndpoint<R extends object = Record<string, never>, L exten
         s.cancelled = true;
         s.ac.abort(err);
         s.wake?.();
+        if (s.it) Promise.resolve().then(() => s.it?.return?.()).catch(() => {});
       }
       serving.clear();
       localFns.clear();
