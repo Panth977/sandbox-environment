@@ -11,7 +11,7 @@ const tag = `v${version}`;
 if (sh("git status --porcelain")) throw new Error("working tree not clean");
 if (sh(`git tag -l ${tag}`)) throw new Error(`${tag} exists`);
 const branch = sh("git rev-parse --abbrev-ref HEAD");
-execSync("node scripts/gen.mjs --check && node scripts/check-deps.mjs && node scripts/build.mjs", { stdio: "inherit" });
+execSync("node scripts/gen.mjs --check && node scripts/check-deps.mjs && node scripts/build.mjs && node scripts/build-types.mjs", { stdio: "inherit" });
 sh("git checkout --detach");
 try {
   sh("git add -f dist");

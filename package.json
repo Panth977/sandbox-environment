@@ -1,0 +1,92 @@
+{
+  "name": "@panth977/sandbox",
+  "version": "0.1.1",
+  "description": "Run untrusted mini-apps (artifacts) inside any web app: sandboxed render engine, typed bridge, UI kit, in-browser compiler and dev engine. Zero dependencies.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Panth977/sandbox-environment"
+  },
+  "sideEffects": [
+    "./dist/ui/*.js",
+    "./dist/editor/*.js",
+    "./dist/dev/language-worker.js"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/mod.d.ts",
+      "import": "./dist/mod.js"
+    },
+    "./host": {
+      "types": "./dist/host/mod.d.ts",
+      "import": "./dist/host/mod.js"
+    },
+    "./svelte": {
+      "types": "./dist/host/svelte.d.ts",
+      "import": "./dist/host/svelte.js"
+    },
+    "./bridge": {
+      "types": "./dist/bridge.d.ts",
+      "import": "./dist/bridge.js"
+    },
+    "./middleware": {
+      "types": "./dist/middleware.d.ts",
+      "import": "./dist/middleware.js"
+    },
+    "./protocol": {
+      "types": "./dist/protocol.d.ts",
+      "import": "./dist/protocol.js"
+    },
+    "./artifact": {
+      "types": "./dist/artifact/artifact.d.ts",
+      "import": "./dist/artifact/artifact.js"
+    },
+    "./stores": {
+      "types": "./dist/artifact/stores.d.ts",
+      "import": "./dist/artifact/stores.js"
+    },
+    "./react": {
+      "types": "./dist/artifact/react.d.ts",
+      "import": "./dist/artifact/react.js"
+    },
+    "./ui": {
+      "types": "./dist/ui/index.d.ts",
+      "import": "./dist/ui/index.js"
+    },
+    "./compiler": {
+      "types": "./dist/compiler/mod.d.ts",
+      "import": "./dist/compiler/mod.js"
+    },
+    "./editor": {
+      "types": "./dist/editor/editor.d.ts",
+      "import": "./dist/editor/editor.js"
+    },
+    "./dev": {
+      "types": "./dist/dev/mod.d.ts",
+      "import": "./dist/dev/mod.js"
+    },
+    "./dev/language-worker": {
+      "types": "./dist/dev/language-worker.d.ts",
+      "import": "./dist/dev/language-worker.js"
+    },
+    "./compiler/worker": {
+      "types": "./dist/compiler/worker.d.ts",
+      "import": "./dist/compiler/worker.js"
+    },
+    "./cli": {
+      "types": "./dist/compiler/cli.d.ts",
+      "import": "./dist/compiler/cli.js"
+    },
+    "./kit.css": "./dist/kit.css",
+    "./runtime.html": "./dist/runtime.html"
+  },
+  "bin": {
+    "sbx": "./dist/compiler/cli.js"
+  }
+}
