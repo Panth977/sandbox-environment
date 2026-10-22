@@ -16,7 +16,7 @@
  *
  * @module
  */
-import { define, emit } from "./base.ts";
+import { ElementBase, define, emit } from "./base.ts";
 
 export interface Column<R = Record<string, unknown>> {
   key: string;
@@ -41,7 +41,7 @@ function cmp(a: unknown, b: unknown): number {
   return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
 }
 
-export class SbxTable extends HTMLElement {
+export class SbxTable extends ElementBase {
   static get observedAttributes(): string[] {
     return ["selectable", "compact", "striped", "loading", "empty", "max-height"];
   }

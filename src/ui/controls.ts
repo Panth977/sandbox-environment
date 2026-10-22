@@ -16,7 +16,7 @@
  *
  * @module
  */
-import { define, emit, esc, Popup, shadow, uid } from "./base.ts";
+import { ElementBase, Popup, define, emit, esc, shadow, uid } from "./base.ts";
 import type { Placement } from "./base.ts";
 
 // ---- tabs ----------------------------------------------------------------
@@ -46,7 +46,7 @@ button:focus-visible { outline: 2px solid var(--sbx-accent); outline-offset: -2p
 .panels { padding-top: var(--sbx-tabs-gap, 12px); }
 `;
 
-export class SbxTabs extends HTMLElement {
+export class SbxTabs extends ElementBase {
   static get observedAttributes(): string[] {
     return ["value"];
   }
@@ -160,7 +160,7 @@ export class SbxTabs extends HTMLElement {
 }
 
 define("sbx-tabs", SbxTabs);
-define("sbx-tab", class extends HTMLElement {});
+define("sbx-tab", class extends ElementBase {});
 
 // ---- switch --------------------------------------------------------------
 
@@ -174,7 +174,7 @@ const SWITCH_CSS = `
 :host(:focus-visible) { outline: none; } :host(:focus-visible) .track { outline: 2px solid var(--sbx-accent); outline-offset: 2px; }
 `;
 
-export class SbxSwitch extends HTMLElement {
+export class SbxSwitch extends ElementBase {
   static formAssociated = true;
   static get observedAttributes(): string[] {
     return ["checked", "disabled"];
@@ -253,7 +253,7 @@ const TIP_CSS = `
   background: var(--sbx-text); color: var(--sbx-bg); box-shadow: var(--sbx-shadow); pointer-events: none; overflow: visible; max-height: none; }
 `;
 
-export class SbxTooltip extends HTMLElement {
+export class SbxTooltip extends ElementBase {
   #root!: ShadowRoot;
   #popup!: Popup;
   #timer: ReturnType<typeof setTimeout> | null = null;

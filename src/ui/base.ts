@@ -6,6 +6,14 @@
  */
 import { SHADOW_BASE_CSS } from "./css.ts";
 
+/**
+ * `HTMLElement`, or a stand-in where there is no DOM (Node, SSR, tests), so
+ * importing the kit never throws; elements are only defined in a browser.
+ */
+export const ElementBase: typeof HTMLElement = typeof HTMLElement !== "undefined"
+  ? HTMLElement
+  : (class {} as unknown as typeof HTMLElement);
+
 const sheets = new Map<string, CSSStyleSheet | null>();
 
 /** Attaches an open shadow root with the shared styles plus `css`. */

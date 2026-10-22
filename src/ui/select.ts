@@ -13,7 +13,7 @@
  *
  * @module
  */
-import { define, emit, esc, moveIndex, Popup, shadow, uid } from "./base.ts";
+import { ElementBase, Popup, define, emit, esc, moveIndex, shadow, uid } from "./base.ts";
 
 export interface SelectOption<V = unknown> {
   label: string;
@@ -49,7 +49,7 @@ const CSS = `
 const CHEV = `<svg class="chev" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const CHECK = `<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
-export class SbxSelect extends HTMLElement {
+export class SbxSelect extends ElementBase {
   static formAssociated = true;
   static get observedAttributes(): string[] {
     return ["placeholder", "multiple", "disabled", "value", "searchable", "clearable"];

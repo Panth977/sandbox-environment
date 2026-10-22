@@ -13,7 +13,7 @@
  *
  * @module
  */
-import { define, emit, esc, shadow } from "./base.ts";
+import { ElementBase, define, emit, esc, shadow } from "./base.ts";
 
 const DIALOG_CSS = `
 :host { display: contents; }
@@ -35,7 +35,7 @@ footer { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 16px;
 @media (prefers-reduced-motion: reduce) { dialog[open] { animation: none; } }
 `;
 
-export class SbxDialog extends HTMLElement {
+export class SbxDialog extends ElementBase {
   static get observedAttributes(): string[] {
     return ["open", "heading"];
   }
@@ -215,7 +215,7 @@ const TOASTER_CSS = `
 @keyframes in { from { opacity: 0; transform: translateY(8px); } }
 `;
 
-export class SbxToaster extends HTMLElement {
+export class SbxToaster extends ElementBase {
   #root!: ShadowRoot;
   connectedCallback(): void {
     if (!this.#root) this.#root = shadow(this, TOASTER_CSS, "");

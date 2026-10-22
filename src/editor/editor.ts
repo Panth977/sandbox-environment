@@ -18,7 +18,7 @@
  *
  * @module
  */
-import { define, emit, esc, shadow } from "../ui/base.ts";
+import { ElementBase, define, emit, esc, shadow } from "../ui/base.ts";
 import { HIGHLIGHT_CSS, highlight, languageOf } from "./highlight.ts";
 import type { Language } from "./highlight.ts";
 
@@ -76,7 +76,7 @@ textarea::selection { background: color-mix(in srgb, var(--sbx-accent) 30%, tran
 
 const PAIRS: Record<string, string> = { "(": ")", "[": "]", "{": "}", '"': '"', "'": "'", "`": "`" };
 
-export class SbxEditor extends HTMLElement {
+export class SbxEditor extends ElementBase {
   #root!: ShadowRoot;
   #ta!: HTMLTextAreaElement;
   #code!: HTMLElement;

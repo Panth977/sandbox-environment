@@ -14,7 +14,7 @@
  *
  * @module
  */
-import { define, emit, esc, moveIndex, Popup, shadow, uid } from "./base.ts";
+import { ElementBase, Popup, define, emit, esc, moveIndex, shadow, uid } from "./base.ts";
 import type { Placement } from "./base.ts";
 
 export type MenuItem =
@@ -27,7 +27,7 @@ const CSS = `
 .kbd { margin-left: auto; padding-left: 16px; font-size: 11px; color: var(--sbx-subtle); }
 `;
 
-export class SbxMenu extends HTMLElement {
+export class SbxMenu extends ElementBase {
   #items: MenuItem[] = [];
   #fromChildren = true;
   #root!: ShadowRoot;
@@ -191,7 +191,7 @@ export class SbxMenu extends HTMLElement {
 }
 
 /** Data-only children of `<sbx-menu>`. */
-class SbxMenuData extends HTMLElement {
+class SbxMenuData extends ElementBase {
   connectedCallback(): void {
     this.hidden = true;
   }

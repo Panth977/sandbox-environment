@@ -14,7 +14,7 @@
  *
  * @module
  */
-import { define, emit, esc, shadow } from "./base.ts";
+import { ElementBase, define, emit, esc, shadow } from "./base.ts";
 
 export type ChartType = "line" | "area" | "bar" | "pie" | "donut";
 type Row = Record<string, unknown>;
@@ -69,7 +69,7 @@ function asTime(v: unknown): number | null {
   return null;
 }
 
-export class SbxChart extends HTMLElement {
+export class SbxChart extends ElementBase {
   static get observedAttributes(): string[] {
     return ["type", "height", "stacked", "no-legend", "unit", "x", "y"];
   }
