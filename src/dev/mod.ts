@@ -465,6 +465,15 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
       suggest: { showStatusBar: true, preview: true },
       quickSuggestions: { other: true, comments: false, strings: true },
     });
+    // Monaco scrolls virtually; a browser scrolling its containers natively (bringing the focused
+    // input into view) would shift the text off its grid. Undo any native scroll inside the editor.
+    editorEl.addEventListener("scroll", (e) => {
+      const t = e.target as HTMLElement;
+      if (t !== editorEl && (t.scrollLeft || t.scrollTop) && t.classList?.contains("monaco-scrollable-element")) {
+        t.scrollLeft = 0;
+        t.scrollTop = 0;
+      }
+    }, true);
     // The detail pane beside the completion list (members of an object, docs) is open by default.
     const suggest = editor.getContribution("editor.contrib.suggestController");
     let detailsShown = false;

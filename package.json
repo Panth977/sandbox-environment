@@ -1,6 +1,6 @@
 {
   "name": "@panth977/sandbox",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Run untrusted mini-apps (artifacts) inside any web app: sandboxed render engine, typed bridge, UI kit, in-browser compiler and dev engine. Zero dependencies.",
   "license": "Apache-2.0",
   "type": "module",
