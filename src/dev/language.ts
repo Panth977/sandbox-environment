@@ -33,6 +33,26 @@ export interface CompletionDetails {
   doc?: string;
 }
 
+/** A span in one of the artifact's files. */
+export interface LspLocation {
+  path: string;
+  from: number;
+  to: number;
+}
+
+export interface LspTextEdit {
+  path: string;
+  from: number;
+  to: number;
+  text: string;
+}
+
+export interface LspSignatureHelp {
+  signatures: { label: string; doc?: string; params: { label: [number, number]; doc?: string }[] }[];
+  active: number;
+  param: number;
+}
+
 export interface LspDiagnostic {
   from: number;
   to: number;
@@ -52,6 +72,13 @@ export interface LanguageService {
   /** The full picture of one completion item: its signature, an object's members, the docs. */
   completionDetails(path: string, pos: number, name: string): Promise<CompletionDetails | null>;
   quickInfo(path: string, pos: number): Promise<string | null>;
+  signatureHelp(path: string, pos: number): Promise<LspSignatureHelp | null>;
+  /** Where a symbol is declared (only spans inside the artifact's files). */
+  definition(path: string, pos: number): Promise<LspLocation[]>;
+  references(path: string, pos: number): Promise<LspLocation[]>;
+  /** Edits renaming the symbol at `pos`, or a reason it cannot be renamed. */
+  rename(path: string, pos: number, name: string): Promise<{ edits: LspTextEdit[] } | { error: string }>;
+  format(path: string, options?: { tabSize?: number; insertSpaces?: boolean }): Promise<LspTextEdit[]>;
 }
 
 /** JSX typings for the UI kit's custom elements (React/Preact) and tag-name maps. */
@@ -383,6 +410,17 @@ export function createLanguageService(): LanguageService {
   }
   const handled = (p: string) => isTsLike(p) || isSvelte(p) || p.endsWith(".json");
 
+  /** An editor path for a language-service file name, or null outside the artifact. */
+  const userPath = (f: string): string | null => {
+    const p = f.endsWith(VIRTUAL) ? f.slice(0, -VIRTUAL.length) : f;
+    return files.has(f) && !f.startsWith("/node_modules/") ? p : null;
+  };
+  const locations = (list: any[] | undefined): LspLocation[] =>
+    (list ?? []).flatMap((d: any) => {
+      const path = userPath(d.fileName);
+      return path ? [{ path, from: d.textSpan.start, to: d.textSpan.start + d.textSpan.length }] : [];
+    });
+
   return {
     async init(o) {
       version = o.typescriptVersion ?? version;
@@ -464,7 +502,7 @@ export function createLanguageService(): LanguageService {
         .filter(Boolean).join("\n");
       return {
         kind: shape?.kind ?? d.kind,
-        title: shape?.kind === "object" ? `(${d.kind}) ${name}: ${shape.short}` : ts.displayPartsToString(d.displayParts),
+        title: shape?.kind === "object" ? `(object) ${name}: ${shape.short}` : ts.displayPartsToString(d.displayParts),
         ...(shape?.members ? { members: shape.members } : {}),
         ...(doc ? { doc } : {}),
       };
@@ -486,6 +524,63 @@ export function createLanguageService(): LanguageService {
       }
       const doc = ts.displayPartsToString(q.documentation ?? []);
       return doc ? `${sig}\n\n${doc}` : sig;
+    },
+    async signatureHelp(path, pos) {
+      const p = lsPath(path);
+      if (!service || !files.has(p)) return null;
+      const h = service.getSignatureHelpItems(p, pos, {});
+      if (!h) return null;
+      const signatures = h.items.map((it: any) => {
+        let label = ts.displayPartsToString(it.prefixDisplayParts);
+        const params = it.parameters.map((x: any, i: number) => {
+          if (i) label += ts.displayPartsToString(it.separatorDisplayParts);
+          const start = label.length;
+          label += ts.displayPartsToString(x.displayParts);
+          const doc = ts.displayPartsToString(x.documentation ?? []);
+          return doc ? { label: [start, label.length] as [number, number], doc } : { label: [start, label.length] as [number, number] };
+        });
+        label += ts.displayPartsToString(it.suffixDisplayParts);
+        const doc = ts.displayPartsToString(it.documentation ?? []);
+        return doc ? { label, doc, params } : { label, params };
+      });
+      return { signatures, active: h.selectedItemIndex, param: h.argumentIndex };
+    },
+    async definition(path, pos) {
+      const p = lsPath(path);
+      if (!service || !files.has(p)) return [];
+      return locations(service.getDefinitionAtPosition(p, pos));
+    },
+    async references(path, pos) {
+      const p = lsPath(path);
+      if (!service || !files.has(p)) return [];
+      return locations(service.getReferencesAtPosition(p, pos));
+    },
+    async rename(path, pos, name) {
+      const p = lsPath(path);
+      if (!service || !files.has(p)) return { error: "Nothing to rename here" };
+      const info = service.getRenameInfo(p, pos, { allowRenameOfImportPath: false });
+      if (!info?.canRename) return { error: info?.localizedErrorMessage ?? "This cannot be renamed" };
+      const locs = service.findRenameLocations(p, pos, false, false, { providePrefixAndSuffixTextForRename: true }) ?? [];
+      const edits: LspTextEdit[] = [];
+      for (const l of locs) {
+        const up = userPath(l.fileName);
+        if (!up) return { error: "It is declared outside the artifact's files" };
+        edits.push({ path: up, from: l.textSpan.start, to: l.textSpan.start + l.textSpan.length, text: (l.prefixText ?? "") + name + (l.suffixText ?? "") });
+      }
+      return { edits };
+    },
+    async format(path, options = {}) {
+      // .svelte files are formatted as their virtual TS would be: skip them.
+      if (!service || !files.has(path) || !isTsLike(path)) return [];
+      const edits = service.getFormattingEditsForDocument(path, {
+        indentSize: options.tabSize ?? 2, tabSize: options.tabSize ?? 2, convertTabsToSpaces: options.insertSpaces ?? true,
+        newLineCharacter: "\n", insertSpaceAfterCommaDelimiter: true, insertSpaceAfterSemicolonInForStatements: true,
+        insertSpaceBeforeAndAfterBinaryOperators: true, insertSpaceAfterKeywordsInControlFlowStatements: true,
+        insertSpaceAfterFunctionKeywordForAnonymousFunctions: true, insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces: true,
+        insertSpaceAfterOpeningAndBeforeClosingJsxExpressionBraces: false, placeOpenBraceOnNewLineForFunctions: false,
+        placeOpenBraceOnNewLineForControlBlocks: false, semicolons: "ignore",
+      });
+      return edits.map((e: any) => ({ path, from: e.span.start, to: e.span.start + e.span.length, text: e.newText }));
     },
   };
 }

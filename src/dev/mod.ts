@@ -2,7 +2,7 @@
  * The development engine: an IDE for one artifact, in any page.
  *
  *   ┌ toolbar: ☰ · open files (closable) ···························· status · ⇄ · Run ┐
- *   │ FILES (tree) │ editor (TypeScript errors, completions, find)  │ live preview      │
+ *   │ FILES (tree) │ Monaco (the VS Code editor) + TypeScript        │ live preview      │
  *   │              │                                                 │ (the same sandbox │
  *   │              │                                                 │  viewers get)     │
  *   ├ Problems · Console ─────────────────────────────────────────────────────────────┤
@@ -18,6 +18,11 @@
  * });
  * ```
  *
+ * The editor is Monaco, loaded on demand from a CDN (`monacoBase`); the
+ * language features (completions, hover, signatures, go to definition,
+ * rename, format, errors) come from the kit's TypeScript worker, so `.svelte`
+ * files get the same as `.ts`.
+ *
  * @module
  */
 import { compile } from "../compiler/compile.ts";
@@ -28,11 +33,15 @@ import { createEndpoint } from "../bridge.ts";
 import type { Remote } from "../bridge.ts";
 import type { LanguageService, LspDiagnostic } from "./language.ts";
 import { confirmDialog, installStyles } from "../ui/index.ts";
-import { SbxEditor } from "../editor/editor.ts";
 import { languageOf } from "../editor/highlight.ts";
+import { loadMonaco, monacoLanguage, registerSvelte } from "./monaco.ts";
+import type { Monaco } from "./monaco.ts";
 import { esc } from "../ui/base.ts";
 import type { ConsoleEntry } from "../protocol.ts";
 import { createTree, parentOf, TREE_CSS } from "./tree.ts";
+import { addEngine, themeFrom } from "./providers.ts";
+
+let engineSeq = 0;
 
 export interface DevOptions extends Omit<MountOptions, "artifact" | "size"> {
   files: SourceFiles;
@@ -43,6 +52,8 @@ export interface DevOptions extends Omit<MountOptions, "artifact" | "size"> {
   languageWorker?: string | URL | false;
   /** ESM URL of TypeScript for the language worker. */
   typescriptUrl?: string;
+  /** Monaco's `min` folder (`…/monaco-editor@<version>/min`). Default: jsDelivr, the version the kit is tested with. */
+  monacoBase?: string;
   /** Code on the left (default) or right. */
   layout?: "code-left" | "code-right";
   /** Show the file explorer (default: true when the dev engine is wider than 720 px). */
@@ -67,6 +78,12 @@ export interface DevHandle {
   setLayout(layout: "code-left" | "code-right"): void;
   /** Show or hide the file explorer. */
   setExplorer(show: boolean): void;
+  /** Resolves when the editor (Monaco) is up. */
+  readonly ready: Promise<void>;
+  /** The Monaco editor, once it is up. */
+  readonly editor: any;
+  /** Moves the cursor (1-based) in the open file and focuses the editor. */
+  goTo(line: number, column?: number): void;
   destroy(): void;
 }
 
@@ -102,7 +119,8 @@ const CSS = `
 .sbx-dev--right .sbx-dev__split--tree { order: 4; } .sbx-dev--right .sbx-dev__tree { order: 5; border-left: 1px solid var(--sbx-line); border-right: 0; }
 .sbx-dev__tree { min-height: 0; overflow: hidden; }
 .sbx-dev__code { position: relative; min-width: 0; min-height: 0; background: var(--sbx-surface); }
-.sbx-dev__code sbx-editor { position: absolute; inset: 0; height: auto; }
+.sbx-dev__monaco { position: absolute; inset: 0; }
+.sbx-dev__monaco[hidden] { display: block; visibility: hidden; }
 .sbx-dev__empty-editor { position: absolute; inset: 0; display: grid; place-items: center; color: var(--sbx-subtle); font-size: 12.5px; }
 .sbx-dev__split { cursor: col-resize; background: var(--sbx-line); }
 .sbx-dev__split:hover, .sbx-dev__split.drag { background: var(--sbx-accent); }
@@ -204,7 +222,7 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
     <div class="sbx-dev__main">
       <div class="sbx-dev__tree"></div>
       <div class="sbx-dev__split sbx-dev__split--tree" role="separator" aria-orientation="vertical"></div>
-      <div class="sbx-dev__code"><div class="sbx-dev__empty-editor" hidden>Open a file from the explorer</div></div>
+      <div class="sbx-dev__code"><div class="sbx-dev__monaco"></div><div class="sbx-dev__empty-editor">Loading the editor…</div></div>
       <div class="sbx-dev__split sbx-dev__split--preview" role="separator" aria-orientation="vertical"></div>
       <div class="sbx-dev__preview"></div>
     </div>
@@ -221,9 +239,7 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
     </div>`;
   container.append(root);
   const $ = <T extends Element>(sel: string) => root.querySelector(sel) as T;
-  const editor = document.createElement("sbx-editor") as SbxEditor;
-  editor.readOnly = !!options.readOnly;
-  $(".sbx-dev__code").append(editor);
+  const editorEl = $<HTMLElement>(".sbx-dev__monaco");
   const emptyEditor = $<HTMLElement>(".sbx-dev__empty-editor");
   const previewEl = $<HTMLElement>(".sbx-dev__preview");
   const msg = $<HTMLElement>(".sbx-dev__msg");
@@ -297,6 +313,7 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
   }
 
   function filesChanged() {
+    syncModels();
     void lsp?.setFiles(files, deps()).catch(() => {});
     options.onChange?.({ ...files });
     renderTree();
@@ -332,18 +349,6 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
         typesState = "Types unavailable";
         console.warn("[sandbox dev] type checking unavailable:", e);
       }).finally(() => updateStatus());
-      editor.completions = async (pos) => {
-        await lspReady;
-        return lsp ? await lsp.completions(current, pos) : null;
-      };
-      editor.completionDetail = async (pos, label) => {
-        await lspReady;
-        return lsp ? await lsp.completionDetails(current, pos, label) : null;
-      };
-      editor.hover = async (pos) => {
-        await lspReady;
-        return lsp ? await lsp.quickInfo(current, pos) : null;
-      };
     } catch (e) {
       console.warn("[sandbox dev] language worker failed to start:", e);
     }
@@ -365,20 +370,152 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
     renderPanel();
   }
 
-  function syncEditorDiagnostics() {
-    const text = files[current] ?? "";
-    const offsetOf = (line?: number, col?: number) => {
-      if (!line) return 0;
-      let off = 0;
-      const lines = text.split("\n");
-      for (let i = 0; i < line - 1 && i < lines.length; i++) off += lines[i].length + 1;
-      return off + Math.max(0, (col ?? 1) - 1);
-    };
-    const fromCompile = compileProblems.filter((p) => p.file === current && p.line).map((p) => {
-      const from = offsetOf(p.line, p.column);
-      return { from, to: from + 1, severity: p.severity, message: p.message };
+  // ---- the editor (Monaco) -------------------------------------------------
+  const engineId = `e${++engineSeq}`;
+  let monaco: Monaco | null = null;
+  let editor: any = null;
+  const models = new Map<string, any>();
+  const viewStates = new Map<string, unknown>();
+  const disposers: (() => void)[] = [];
+  /** Set while the engine itself writes a model, so the change is not echoed back. */
+  let writing = false;
+
+  function modelFor(path: string): any {
+    if (!monaco) return null;
+    let m = models.get(path);
+    if (m) return m;
+    const uri = monaco.Uri.from({ scheme: "sbx", authority: engineId, path });
+    m = monaco.editor.getModel(uri) ?? monaco.editor.createModel(files[path] ?? "", monacoLanguage(path), uri);
+    m.updateOptions({ tabSize: 2, insertSpaces: true });
+    m.onDidChangeContent(() => {
+      if (writing || !(path in files)) return;
+      setFile(path, m.getValue(), true);
     });
-    editor.diagnostics = [...(tsRanges.get(current) ?? []), ...fromCompile];
+    models.set(path, m);
+    return m;
+  }
+
+  function dropModel(path: string) {
+    models.get(path)?.dispose();
+    models.delete(path);
+    viewStates.delete(path);
+  }
+
+  function syncModels() {
+    if (!monaco) return;
+    for (const p of [...models.keys()]) if (!(p in files)) dropModel(p);
+    for (const p of Object.keys(files)) {
+      const m = modelFor(p);
+      if (m.getValue() !== files[p]) {
+        writing = true;
+        try {
+          m.setValue(files[p]);
+        } finally {
+          writing = false;
+        }
+      }
+    }
+  }
+
+  const ready: Promise<void> = loadMonaco(options.monacoBase).then((m) => {
+    if (destroyed) return;
+    monaco = m;
+    registerSvelte(m);
+    // Monaco's own TypeScript would answer twice: the kit's worker does it (it knows the host API, packages and Svelte).
+    for (const d of [m.typescript?.typescriptDefaults, m.typescript?.javascriptDefaults, m.languages.typescript?.typescriptDefaults, m.languages.typescript?.javascriptDefaults]) {
+      d?.setModeConfiguration?.({
+        completionItems: false, hovers: false, documentSymbols: false, definitions: false, references: false, documentHighlights: false,
+        rename: false, diagnostics: false, documentRangeFormattingEdits: false, signatureHelp: false, onTypeFormattingEdits: false,
+        codeActions: false, inlayHints: false,
+      });
+    }
+    disposers.push(addEngine(m, engineId, {
+      lsp: async () => {
+        await lspReady;
+        return lsp;
+      },
+      model: (p) => (p in files ? modelFor(p) : null),
+      reveal: (p, sel) => {
+        if (!(p in files)) return;
+        openFile(p);
+        if (sel && editor) {
+          const r = "startLineNumber" in sel ? sel : { startLineNumber: sel.lineNumber, startColumn: sel.column, endLineNumber: sel.lineNumber, endColumn: sel.column };
+          editor.setSelection(r);
+          editor.revealRangeInCenterIfOutsideViewport(r);
+          editor.focus();
+        }
+      },
+    }));
+    const mono = getComputedStyle(root).getPropertyValue("--sbx-font-mono").trim();
+    editor = m.editor.create(editorEl, {
+      model: null,
+      theme: themeFrom(m, root),
+      automaticLayout: true,
+      readOnly: !!options.readOnly,
+      fontSize: 13,
+      lineHeight: 20,
+      ...(mono ? { fontFamily: mono } : {}),
+      minimap: { enabled: false },
+      scrollBeyondLastLine: false,
+      tabSize: 2,
+      fixedOverflowWidgets: true,
+      renderLineHighlight: "line",
+      smoothScrolling: true,
+      padding: { top: 6 },
+      suggest: { showStatusBar: true, preview: true },
+      quickSuggestions: { other: true, comments: false, strings: true },
+    });
+    // The detail pane beside the completion list (members of an object, docs) is open by default.
+    const suggest = editor.getContribution("editor.contrib.suggestController");
+    let detailsShown = false;
+    suggest?.widget?.value?.onDidShow?.(() => {
+      if (detailsShown) return;
+      detailsShown = true;
+      editor.trigger("sbx", "toggleSuggestionDetails", {});
+    });
+    editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => options.onSave?.({ ...files }));
+    editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.Enter, () => void build());
+    editor.onDidChangeCursorSelection((e: any) => {
+      const sel = e.selection;
+      const model = editor.getModel();
+      cursor = {
+        line: sel.positionLineNumber,
+        column: sel.positionColumn,
+        selected: model ? model.getValueLengthInRange(sel) : 0,
+      };
+      updateStatus();
+    });
+    // follow the page's theme (the host sets the kit's CSS variables)
+    const retheme = () => editor && m.editor.setTheme(themeFrom(m, root));
+    const mo = new MutationObserver(retheme);
+    for (const el of [container, document.documentElement, document.body]) mo.observe(el, { attributes: true, attributeFilter: ["style", "class", "data-theme"] });
+    disposers.push(() => mo.disconnect());
+    syncModels();
+    openFile(current);
+    syncEditorDiagnostics();
+  }).catch((e) => {
+    emptyEditor.textContent = "The editor could not load. Check the connection and reload.";
+    console.warn("[sandbox dev] editor failed to load:", e);
+  });
+
+  function syncEditorDiagnostics() {
+    if (!monaco) return;
+    const sev = (s: string) => s === "error" ? monaco.MarkerSeverity.Error : s === "warning" ? monaco.MarkerSeverity.Warning : monaco.MarkerSeverity.Info;
+    for (const [path, m] of models) {
+      const ts = (tsRanges.get(path) ?? []).map((d: LspDiagnostic) => {
+        const a = m.getPositionAt(d.from);
+        const b = m.getPositionAt(Math.max(d.to, d.from + 1));
+        return { startLineNumber: a.lineNumber, startColumn: a.column, endLineNumber: b.lineNumber, endColumn: b.column, message: d.message, severity: sev(d.severity), source: "ts" };
+      });
+      const seen = new Set(ts.map((x) => `${x.startLineNumber}:${x.startColumn}:${x.message}`));
+      const comp = compileProblems.filter((p) => p.file === path && p.line && !seen.has(`${p.line}:${p.column ?? 1}:${p.message}`)).map((p) => {
+        const line = Math.min(p.line!, m.getLineCount());
+        const col = p.column ?? 1;
+        const w = m.getWordAtPosition({ lineNumber: line, column: col });
+        return { startLineNumber: line, startColumn: w?.startColumn ?? col, endLineNumber: line, endColumn: w?.endColumn ?? col + 1, message: p.message, severity: sev(p.severity), source: p.source };
+      });
+      monaco.editor.setModelMarkers(m, "sbx", [...ts, ...comp]);
+    }
   }
 
   // ---- open-file tabs -----------------------------------------------------
@@ -393,22 +530,30 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
   }
 
   function openFile(path: string) {
+    if (editor && current && models.has(current) && editor.getModel() === models.get(current)) viewStates.set(current, editor.saveViewState());
     if (!path || !(path in files)) {
       current = "";
-      editor.hidden = true;
+      editor?.setModel(null);
+      editorEl.hidden = true;
       emptyEditor.hidden = false;
+      if (monaco) emptyEditor.textContent = "Open a file from the explorer";
       renderTabs();
       renderTree();
       updateStatus();
       return;
     }
     if (!openTabs.includes(path)) openTabs.push(path);
+    const switching = path !== current || !editor?.getModel();
     current = path;
-    editor.hidden = false;
-    emptyEditor.hidden = true;
-    editor.path = path;
-    editor.value = files[path];
-    syncEditorDiagnostics();
+    if (editor) {
+      editorEl.hidden = false;
+      emptyEditor.hidden = true;
+      if (switching) {
+        editor.setModel(modelFor(path));
+        const vs = viewStates.get(path);
+        if (vs) editor.restoreViewState(vs);
+      }
+    }
     renderTabs();
     renderTree();
     updateStatus();
@@ -422,10 +567,21 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
     else renderTabs();
   }
 
-  function setFile(path: string, text: string) {
+  function setFile(path: string, text: string, fromEditor = false) {
     const isNew = !(path in files);
     files[path] = text;
-    if (path === current && editor.value !== text) editor.value = text;
+    if (!fromEditor && monaco) {
+      const m = modelFor(path);
+      if (m.getValue() !== text) {
+        writing = true;
+        try {
+          // an edit (not setValue) keeps undo working across outside changes
+          m.pushEditOperations([], [{ range: m.getFullModelRange(), text }], () => null);
+        } finally {
+          writing = false;
+        }
+      }
+    }
     void lsp?.setFile(path, text).catch(() => {});
     options.onChange?.({ ...files });
     if (isNew) renderTree();
@@ -538,12 +694,6 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
   }
 
   // ---- events -------------------------------------------------------------
-  editor.addEventListener("change", () => current && setFile(current, editor.value));
-  editor.addEventListener("cursor", (e) => {
-    cursor = (e as CustomEvent<typeof cursor>).detail;
-    updateStatus();
-  });
-  editor.addEventListener("save", () => options.onSave?.({ ...files }));
   root.addEventListener("keydown", (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
@@ -583,13 +733,13 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
       $<HTMLElement>(".sbx-dev__panel").dataset.collapsed = "false";
       renderPanel();
     }
-    if (s === "pos") editor.focusEditor();
+    if (s === "pos") editor?.focus();
   });
   list.addEventListener("click", (e) => {
     const row = (e.target as Element).closest<HTMLElement>("[data-file]");
     if (!row) return;
     openFile(row.dataset.file!);
-    editor.goTo(Number(row.dataset.line), Number(row.dataset.col));
+    handle.goTo(Number(row.dataset.line), Number(row.dataset.col));
   });
 
   // splitters: the explorer's width and the preview's share
@@ -640,11 +790,25 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
       root.classList.toggle("sbx-dev--no-tree", !show);
       $(".sbx-dev__bar [data-act=explorer]").setAttribute("aria-pressed", String(show));
     },
+    ready,
+    get editor() {
+      return editor;
+    },
+    goTo(line, column = 1) {
+      if (!editor) return;
+      const pos = { lineNumber: line, column };
+      editor.setPosition(pos);
+      editor.revealPositionInCenterIfOutsideViewport(pos);
+      editor.focus();
+    },
     destroy() {
       destroyed = true;
       if (timer) clearTimeout(timer);
       preview?.destroy();
       worker?.terminate();
+      for (const d of disposers) d();
+      editor?.dispose();
+      for (const p of [...models.keys()]) dropModel(p);
       root.remove();
     },
   };

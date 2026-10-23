@@ -74,16 +74,9 @@ CHECKS.dev = async function (r, expect, page) {
   expect(!!problem, "TS type error listed in Problems");
   const leftover = await page.evaluate(() => document.querySelector(".sbx-dev__list")?.textContent ?? "");
   expect(!/Cannot find module|JSX element implicitly|IntrinsicElements/.test(leftover), `no bogus module/JSX errors: ${leftover.slice(0, 400)}`);
-  // completions for the host API (types from hostTypes)
-  const items = await page.evaluate(async () => {
-    window.__dev.openFile("/App.tsx");
-    const ed = document.querySelector("sbx-editor");
-    const src = ed.value;
-    const pos = src.indexOf("host.devices.") + "host.devices.".length;
-    const res = await ed.completions(pos, src);
-    return res?.items.map((i) => i.label) ?? [];
-  });
-  expect(items.includes("list"), `completions for host.devices. (${items.slice(0, 10)})`);
+  // the editor is Monaco
+  await page.evaluate(() => window.__dev.ready);
+  expect(await page.locator(".sbx-dev__code .monaco-editor").count() === 1, "Monaco editor mounted");
   // edit → rebuild → preview updates
   await page.evaluate(() => window.__dev.setFile("/App.tsx", window.__dev.files()["/App.tsx"].replace("devices</h1>", "sensors</h1>")));
   const h2 = await page.waitForFunction(async () => true, null, { timeout: 1000 }).then(() =>
@@ -128,13 +121,14 @@ CHECKS.dev = async function (r, expect, page) {
   await page.locator(".sbx-dev__tab", { hasText: "index.tsx" }).hover();
   await page.locator(".sbx-dev__tab", { hasText: "index.tsx" }).locator(".x").click();
   expect(await page.locator(".sbx-dev__tab").count() === before - 1, "tab closes");
-  // find in the editor
+  // find in the editor (Monaco's find widget)
   await tree.locator('.sbx-tree__row[data-path="/App.tsx"]').click();
-  await page.evaluate(() => document.querySelector("sbx-editor").openFind());
-  await page.locator("sbx-editor .find .q").fill("rows");
-  const count = await page.locator("sbx-editor .find .count").textContent();
+  await page.evaluate(() => window.__dev.goTo(1, 1));
+  await page.keyboard.press("ControlOrMeta+f");
+  await page.keyboard.type("rows");
+  const count = await page.locator(".find-widget .matchesCount").textContent({ timeout: 5000 }).catch(() => "");
   expect(/^1 of [2-9]/.test(count), `find counts matches (${count})`);
-  await page.locator("sbx-editor .find .q").press("Escape");
+  await page.keyboard.press("Escape");
   // status bar
   const pos = await page.locator(".sbx-dev__status [data-s=pos]").textContent();
   expect(/^Ln \d+, Col \d+/.test(pos), `status shows cursor (${pos})`);
@@ -142,55 +136,75 @@ CHECKS.dev = async function (r, expect, page) {
   expect(lang === "TypeScript JSX", `status shows language (${lang})`);
 
   // ---- completions while typing (what a person sees) ----
-  const typeAndSee = async (path, text) => {
+  const suggest = page.locator(".suggest-widget.visible");
+  const typeAt = async (path, line, text) => {
     await tree.locator(`.sbx-tree__row[data-path="${path}"]`).click();
-    const ta = page.locator("sbx-editor textarea");
-    await ta.click();
-    await page.keyboard.press("ControlOrMeta+End");
+    await page.evaluate((l) => window.__dev.goTo(l, 1000), line);
     await page.keyboard.press("Enter");
     await page.keyboard.type(text, { delay: 40 });
-    const pop = page.locator("sbx-editor .pop");
-    await pop.waitFor({ state: "visible", timeout: 30000 }).catch(() => {});
-    const labels = await pop.locator(".item").allTextContents().catch(() => []);
-    await page.keyboard.press("Escape");
-    return labels.join(" ");
   };
-  const tsx = await typeAndSee("/App.tsx", "host.devices.");
+  const labels = async () => {
+    await suggest.waitFor({ state: "visible", timeout: 30000 }).catch(() => {});
+    return (await suggest.locator(".monaco-list-row .label-name").allTextContents().catch(() => [])).join(" ");
+  };
+  await typeAt("/App.tsx", 8, "host.devices.");
+  const tsx = await labels();
   expect(tsx.includes("list"), `typing host.devices. in .tsx pops completions (${tsx.slice(0, 120)})`);
-  // an object of methods says so, and the pane beside the list shows its members
-  await tree.locator('.sbx-tree__row[data-path="/App.tsx"]').click();
-  await page.evaluate(() => window.__dev.setFile("/App.tsx", window.__dev.files()["/App.tsx"].replace(/\nhost\.devices\.\n?$/, "\n")));
-  await page.locator("sbx-editor textarea").click();
-  await page.evaluate(() => document.querySelector("sbx-editor").goTo(8, 200));
-  await page.keyboard.press("Enter");
-  await page.keyboard.type("host.", { delay: 40 });
-  // wait for the settled list and pane (results arrive as you type)
-  const settled = await page.waitForFunction(() => {
-    const ed = document.querySelector("sbx-editor");
-    const it = [...ed.shadowRoot.querySelectorAll(".pop .item")].find((x) => x.textContent.includes("devices"));
-    const pane = ed.shadowRoot.querySelector(".pop-detail");
-    const kind = it?.querySelector(".kind")?.className ?? "";
-    const text = pane && pane.style.display === "block" ? pane.textContent : "";
-    return /\bobject\b/.test(kind) && /list\(q\?/.test(text) ? { kind, text } : null;
-  }, null, { timeout: 30000 }).then((h) => h.jsonValue()).catch(() => null);
-  expect(!!settled, "host.devices is shown as an object, and the pane lists its members");
-  expect(/Devices the viewer can see/.test(settled?.text ?? ""), `pane shows member docs (${(settled?.text ?? "").slice(0, 160)})`);
   await page.keyboard.press("Escape");
+  // an object of methods says so (icon + type), and the pane beside the list shows its members
+  await page.keyboard.press("ControlOrMeta+z");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("host.dev", { delay: 40 });
+  const settled = await page.waitForFunction(() => {
+    const row = [...document.querySelectorAll(".suggest-widget.visible .monaco-list-row")].find((r) => r.textContent.includes("devices"));
+    const icon = row?.querySelector(".suggest-icon")?.className ?? "";
+    const pane = document.querySelector(".suggest-details-container .suggest-details, .suggest-details");
+    const text = pane && pane.offsetParent !== null ? pane.textContent : "";
+    return /symbol-module/.test(icon) && /list\(q\?/.test(text) ? { icon, text, row: row.textContent } : null;
+  }, null, { timeout: 30000 }).then((h) => h.jsonValue()).catch(() => null);
+  expect(!!settled, "host.devices is shown as an object, and the details pane lists its members");
+  expect(/Devices the viewer can see/.test(settled?.text ?? ""), `pane shows member docs (${(settled?.text ?? "").slice(0, 160)})`);
+  expect(/\{ list \}/.test(settled?.row ?? ""), `row shows the object's short type (${settled?.row})`);
+  await page.keyboard.press("Escape");
+  // go to definition opens the other file
+  await tree.locator('.sbx-tree__row[data-path="/index.tsx"]').click();
+  await page.evaluate(() => {
+    const ed = window.__dev.editor;
+    const m = ed.getModel();
+    const p = m.getPositionAt(m.getValue().indexOf("App }") + 1);
+    ed.setPosition(p);
+    ed.focus();
+    ed.trigger("t", "editor.action.revealDefinition", {});
+  });
+  const defTab = await page.waitForFunction(() => {
+    const t = document.querySelector(".sbx-dev__tab[aria-selected=true]")?.textContent ?? "";
+    return t.includes("App.tsx") ? t : null;
+  }, null, { timeout: 15000 }).then((h) => h.jsonValue()).catch(() => null);
+  expect(!!defTab, "go to definition opens App.tsx");
+  // rename a symbol across files
+  const renamed = await page.evaluate(async () => {
+    const ed = window.__dev.editor;
+    const m = ed.getModel();
+    ed.setPosition(m.getPositionAt(m.getValue().indexOf("function App") + 10));
+    ed.focus();
+    ed.trigger("t", "editor.action.rename", {});
+    return true;
+  });
+  const box = await page.locator(".rename-box input, .rename-input").first().waitFor({ timeout: 10000 }).then(() => true).catch(() => false);
+  expect(box, "rename box opens");
+  const input = page.locator(".rename-box input, .rename-input").first();
+  await input.fill("Home");
+  await input.press("Enter");
+  const both = await page.waitForFunction(() => {
+    const f = window.__dev.files();
+    return f["/App.tsx"].includes("function Home") && f["/index.tsx"].includes("Home") ? true : null;
+  }, null, { timeout: 15000 }).catch(() => null);
+  expect(renamed && !!both, `rename updates both files (${JSON.stringify(await page.evaluate(() => [window.__dev.files()["/index.tsx"], window.__dev.files()["/App.tsx"].slice(0, 300)]))})`);
   // a Svelte file gets the same: script blocks and template expressions
   await page.evaluate(() => window.__dev.setFile("/Card.svelte", '<script lang="ts">\n  import { host } from "@panth977/sandbox/artifact";\n  let total = $state(0);\n</script>\n<p>{total}</p>\n'));
   await page.waitForTimeout(500);
-  await tree.locator('.sbx-tree__row[data-path="/Card.svelte"]').click();
-  await page.locator("sbx-editor textarea").click();
-  // put the cursor at the end of line 3 (inside the script) and type
-  await page.evaluate(() => {
-    const ed = document.querySelector("sbx-editor");
-    ed.goTo(3, 100);
-  });
-  await page.keyboard.press("Enter");
-  await page.keyboard.type("host.devices.", { delay: 40 });
-  const spop = page.locator("sbx-editor .pop");
-  await spop.waitFor({ state: "visible", timeout: 30000 }).catch(() => {});
-  const sv = (await spop.locator(".item").allTextContents().catch(() => [])).join(" ");
+  await typeAt("/Card.svelte", 3, "host.devices.");
+  const sv = await labels();
   expect(sv.includes("list"), `typing host.devices. in .svelte pops completions (${sv.slice(0, 120)})`);
   await page.keyboard.press("Escape");
 };

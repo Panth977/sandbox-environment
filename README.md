@@ -2,7 +2,8 @@
 
 Run untrusted mini-apps ("artifacts") inside any web app — sandboxed, two-way
 connected to the host through a typed API — and give people the tools to write
-and compile them in the browser. **Zero dependencies.** Web standards only.
+and compile them in the browser. **Zero runtime dependencies.** Web standards only;
+the dev tools load TypeScript, the Svelte compiler and the Monaco editor from a CDN when used.
 
 ```
 @panth977/sandbox
@@ -11,8 +12,8 @@ and compile them in the browser. **Zero dependencies.** Web standards only.
 ├─ /artifact   host · env · expose · onTheme                       — what artifacts import
 ├─ /ui         CSS kit + <sbx-select> <sbx-table> <sbx-chart> …    — the component library
 ├─ /compiler   compile(files) → artifact (browser, worker, Node)  — no bundler, no WASM
-├─ /dev        mountDev(div, { files, api, hostTypes })           — editor + live preview
-├─ /editor     <sbx-editor>                                        — the code editor on its own
+├─ /dev        mountDev(div, { files, api, hostTypes })           — IDE (Monaco) + live preview
+├─ /editor     <sbx-editor>                                        — a tiny zero-dep code field
 ├─ /bridge     createEndpoint(port)                                — the typed RPC on its own
 └─ /middleware scopes · confirm · rateLimit · audit · dryRun
 ```
@@ -136,12 +137,17 @@ import { mountDev } from "@panth977/sandbox/dev";
 mountDev(document.getElementById("ide")!, { files, api, hostTypes, onSave: (files) => save(files) });
 ```
 
-Left: a file explorer (folders; create, rename, drag to move, delete) and a typed editor
-with tabs, find/replace and a status bar. TypeScript diagnostics, completions and hover come
-from your `hostTypes`, the UI kit and npm types fetched on demand — in `.ts/.tsx/.js` files and
-in `.svelte` files (script blocks and template expressions, runes and `$store` reads typed).
+Left: a file explorer (folders; create, rename, drag to move, delete) and tabs. The editor is
+[Monaco](https://microsoft.github.io/monaco-editor/) — the editor of VS Code — loaded on first use
+from jsDelivr (`monacoBase` to serve it yourself; the kit pins the version it is tested with), so
+find/replace, multi-cursor, the command palette (F1), folding and VS Code's keyboard shortcuts all work.
+
+The language features come from the kit's TypeScript worker: errors, completions, hover, signature
+help, go to definition (F12, across files), find references, rename (F2, across files) and format —
+from your `hostTypes`, the UI kit and npm types fetched on demand, in `.ts/.tsx/.js` files and in
+`.svelte` files (script blocks and template expressions, runes and `$store` reads typed).
 Completions say what each item is — object (of methods), method, property — with its short type,
-and a pane beside the list shows the full signature, an object's members and the docs. Right: the same
+and the pane beside the list shows the full signature, an object's members and the docs. Right: the same
 sandbox viewers get. Bottom: problems and console.
 
 ## The UI kit
