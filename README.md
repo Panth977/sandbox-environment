@@ -45,7 +45,7 @@ viewer's permissions, look native, and never touch your tokens.
 | | plain JS | React | Svelte | Angular |
 |---|---|---|---|---|
 | **Artifact** (inside the sandbox) | ✓ `.js` / `.ts` | ✓ `.jsx` / `.tsx` (Preact too) | ✓ Svelte 5 `.svelte` | — |
-| **Host** (your app) | ✓ `mount()` or `<sbx-artifact>` | ✓ `<sbx-artifact>` | ✓ `use:artifact`, `{@attach sandbox()}`, `<sbx-artifact>` | ✓ `<sbx-artifact>` (tested with Angular 15) |
+| **Host** (your app) | ✓ `mount()` or `<sbx-artifact>` | `<sbx-artifact>` (not tested in a React app yet) | ✓ `use:artifact`, `{@attach sandbox()}`, `<sbx-artifact>` | ✓ `<sbx-artifact>` (tested with Angular 15) |
 
 CI builds and drives real host apps in Chromium, Firefox and WebKit — [`examples/angular15`](examples/angular15)
 (Angular 15.2, TypeScript 4.8, `moduleResolution: "node"`), [`examples/svelte5`](examples/svelte5) (Vite) and a
