@@ -1,0 +1,21 @@
+<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-K9dyQvUOE7uAXeF3BLVOwf' blob:; style-src 'unsafe-inline' blob:; connect-src 'none'; img-src data: blob:; font-src data:; media-src data: blob:; worker-src blob:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><meta name="viewport" content="width=device-width,initial-scale=1"><title>artifact</title><style>html,body{margin:0;padding:0}</style><script nonce="K9dyQvUOE7uAXeF3BLVOwf">(()=>{
+const nonce=document.currentScript&&document.currentScript.nonce||"";
+let booted=false;
+addEventListener("message",(e)=>{
+  const d=e.data;
+  if(booted||e.source!==parent||!d||d.$sbx!==1||d.t!=="boot"||!e.ports||!e.ports[0])return;
+  booted=true;
+  const b=d.boot,urls={},imports={};
+  const mods=Object.assign({},b.runtime,b.artifact.modules);
+  for(const k of Object.keys(mods))urls[k]=URL.createObjectURL(new Blob([mods[k]],{type:"text/javascript"}));
+  Object.assign(imports,b.artifact.imports||{});
+  for(const k of Object.keys(b.specifiers||{}))if(urls[b.specifiers[k]])imports[k]=urls[b.specifiers[k]];
+  Object.assign(imports,urls);
+  const m=document.createElement("script");
+  m.type="importmap";m.nonce=nonce;m.textContent=JSON.stringify({imports});
+  document.head.append(m);
+  globalThis.__sbxBoot={port:e.ports[0],boot:b,urls};
+  import(urls[b.runtimeEntry]).catch((err)=>parent.postMessage({$sbx:1,t:"fatal",message:String(err&&err.message||err)},"*"));
+});
+parent.postMessage({$sbx:1,t:"ready",protocols:[1]},"*");
+})();</script></head><body></body></html>
