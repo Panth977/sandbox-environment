@@ -40,6 +40,7 @@ import { esc } from "../ui/base.ts";
 import type { ConsoleEntry } from "../protocol.ts";
 import { createTree, parentOf, TREE_CSS } from "./tree.ts";
 import { addEngine, themeFrom } from "./providers.ts";
+import { CDN_DIST } from "../generated/version.ts";
 
 let engineSeq = 0;
 
@@ -151,6 +152,17 @@ function installDevStyles() {
   s.id = "sbx-dev-css";
   s.textContent = CSS;
   document.head.append(s);
+}
+
+/**
+ * The language worker next to this module when it is served as-is (a CDN, a static folder);
+ * from the release on jsDelivr when a bundler moved this code (webpack, esbuild, Vite builds).
+ */
+function defaultWorkerUrl(): string {
+  const here = String(import.meta.url);
+  return /^https?:/.test(here) && /\/dev\/mod\.js(\?|$)/.test(here)
+    ? new URL("./language-" + "worker.js", here).href
+    : `${CDN_DIST}/dev/language-worker.js`;
 }
 
 /** A module worker from any URL (cross-origin module URLs are wrapped in a same-origin blob worker). */
@@ -335,7 +347,7 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
   let lspReady: Promise<void> = Promise.resolve();
   if (options.languageWorker !== false) {
     try {
-      const url = options.languageWorker ?? new URL("./language-worker.js", import.meta.url);
+      const url = options.languageWorker ?? defaultWorkerUrl();
       worker = moduleWorker(url);
       lsp = createEndpoint<LanguageService>(worker as unknown as Parameters<typeof createEndpoint>[0]).remote;
       typesState = "Loading TypeScript…";

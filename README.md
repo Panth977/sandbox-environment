@@ -8,6 +8,7 @@ the dev tools load TypeScript, the Svelte compiler and the Monaco editor from a 
 ```
 @panth977/sandbox
 ├─ /host       mount(div, { artifact, api, middleware, theme })   — the render engine
+├─ /element    <sbx-artifact [artifact] [api]>                     — the same, as a custom element (Angular, plain JS, …)
 ├─ /svelte     use:artifact / {@attach sandbox(…)}                 — Svelte adapter
 ├─ /artifact   host · env · expose · onTheme                       — what artifacts import
 ├─ /ui         CSS kit + <sbx-select> <sbx-table> <sbx-chart> …    — the component library
@@ -39,6 +40,17 @@ viewer's permissions, look native, and never touch your tokens.
   compiled in the browser (or a worker), modules are linked by the browser through an
   import map. The same compiler runs in Node for CI.
 
+## Works with
+
+| | plain JS | React | Svelte | Angular |
+|---|---|---|---|---|
+| **Artifact** (inside the sandbox) | ✓ `.js` / `.ts` | ✓ `.jsx` / `.tsx` (Preact too) | ✓ Svelte 5 `.svelte` | — |
+| **Host** (your app) | ✓ `mount()` or `<sbx-artifact>` | ✓ `<sbx-artifact>` | ✓ `use:artifact`, `{@attach sandbox()}`, `<sbx-artifact>` | ✓ `<sbx-artifact>` (tested with Angular 15) |
+
+CI builds and drives real host apps in Chromium, Firefox and WebKit — [`examples/angular15`](examples/angular15)
+(Angular 15.2, TypeScript 4.8, `moduleResolution: "node"`), [`examples/svelte5`](examples/svelte5) (Vite) and a
+plain page — each running the same artifact written in plain JS, React and Svelte, with calls both ways.
+
 ## Install
 
 ```sh
@@ -51,7 +63,7 @@ Or straight from a CDN, no install (plain ES modules):
 ```ts
 import { mount } from "https://esm.sh/jsr/@panth977/sandbox@0.2/host";
 // or the prebuilt files of a GitHub release:
-import { mount } from "https://cdn.jsdelivr.net/gh/Panth977/sandbox-environment@v0.2.2/dist/host/mod.js";
+import { mount } from "https://cdn.jsdelivr.net/gh/Panth977/sandbox-environment@v0.2.3/dist/host/mod.js";
 ```
 
 Published on [JSR](https://jsr.io/@panth977/sandbox) from CI on every `v*` tag.
@@ -97,6 +109,46 @@ Svelte:
 </script>
 <div use:artifact={{ artifact: compiled, api, theme }}></div>
 ```
+
+#### Angular (15 and later)
+
+```ts
+import { CUSTOM_ELEMENTS_SCHEMA, Component } from "@angular/core";
+import "@panth977/sandbox/element"; // defines <sbx-artifact>
+import type { CompiledArtifact } from "@panth977/sandbox/host";
+
+@Component({
+  selector: "app-tool",
+  standalone: true,                   // or add the schema to your NgModule
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
+  template: `<sbx-artifact [artifact]="compiled" [api]="api" [theme]="theme"
+               (sbx-ready)="ready = true" (sbx-error)="onError($event)"></sbx-artifact>`,
+})
+export class ToolComponent {
+  compiled?: CompiledArtifact;
+  api = { devices: { list: () => this.http.get("/devices").toPromise() } };
+  // …
+}
+```
+
+Types resolve with the classic `moduleResolution: "node"` too (the package maps its subpaths with
+`typesVersions`) and check under TypeScript 4.8. A host API that updates the view from a call can wrap
+its work in `NgZone.run`.
+
+#### Plain JS
+
+```html
+<script type="module">
+  import "https://cdn.jsdelivr.net/gh/Panth977/sandbox-environment@v0.2.3/dist/host/element.js";
+  const el = document.querySelector("sbx-artifact");
+  el.artifact = compiled;
+  el.api = { hello: async (name) => `hi ${name}` };
+</script>
+<sbx-artifact size="auto"></sbx-artifact>
+```
+
+Reactive state can be passed as is — Svelte `$state`, Vue `reactive` and other proxies are copied
+to plain data before they cross into the sandbox.
 
 ### 2. Artifact: use the host
 
@@ -237,6 +289,10 @@ node scripts/gen.mjs            # regenerate sandbox runtime modules after editi
 deno check src/                 # types
 deno task test                  # unit tests (node:test)
 node scripts/build.mjs          # dist/ (browser ES modules, kit.css, runtime.html)
+node scripts/build-types.mjs    # dist/**/*.d.ts (needs typescript: TS_PATH)
+node scripts/check-compat.mjs   # the .d.ts under TypeScript 4.8 with Angular 15's settings
+(cd examples/angular15 && npm ci && npm run build:e2e)   # host apps for e2e (optional locally)
+(cd examples/svelte5 && npm ci && npm run build:e2e)
 node e2e/run.mjs                # Chromium, Firefox, WebKit (needs Playwright, dev only)
 node scripts/check-deps.mjs     # the zero-dependency rule
 ```

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createEndpoint, SandboxError } from "../src/bridge.ts";
+import { createEndpoint, SandboxError, toCloneable } from "../src/bridge.ts";
 import { audit, confirm, rateLimit, scopes } from "../src/middleware.ts";
 import type { AuditEntry } from "../src/middleware.ts";
 
@@ -284,4 +284,19 @@ test("non-protocol messages are ignored", async () => {
   assert.deepEqual(seen, [{ hello: 1 }]);
   h.close();
   ch.port2.close();
+});
+
+test("toCloneable: proxies become plain data, special objects pass through", () => {
+  const d = new Date(0);
+  const state = new Proxy({ list: new Proxy([1, { a: 2 }], {}), when: d, tags: new Set(["x"]), fn() {} }, {});
+  const out = toCloneable(state) as any;
+  assert.deepEqual(out.list, [1, { a: 2 }]);
+  assert.equal(out.when, d);
+  assert.ok(out.tags instanceof Set && out.tags.has("x"));
+  assert.equal("fn" in out, false);
+  const cyc: any = { n: 1 };
+  cyc.self = cyc;
+  const c = toCloneable(cyc) as any;
+  assert.equal(c.self, c);
+  structuredClone(out);
 });

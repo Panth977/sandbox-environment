@@ -1,11 +1,12 @@
 {
   "name": "@panth977/sandbox",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "license": "Apache-2.0",
   "exports": {
     ".": "./src/mod.ts",
     "./host": "./src/host/mod.ts",
     "./svelte": "./src/host/svelte.ts",
+    "./element": "./src/host/element.ts",
     "./bridge": "./src/bridge.ts",
     "./middleware": "./src/middleware.ts",
     "./protocol": "./src/protocol.ts",

@@ -24,7 +24,17 @@ const args = process.argv.slice(2);
 const bi = args.indexOf("--browser");
 const only = args.find((a, i) => !a.startsWith("--") && i !== bi + 1);
 const browsers = bi >= 0 ? [args[bi + 1]] : ["chromium", "firefox", "webkit"];
-const pages = Object.keys(CHECKS).filter((p) => !only || p === only);
+// Host apps built from examples/ (npm run build:e2e there); skipped unless built, required with REQUIRE_HOSTS=1.
+const URLS = {
+  "host-angular15": "/examples/angular15/dist/index.html",
+  "host-svelte5": "/examples/svelte5/dist/index.html",
+};
+const pages = Object.keys(CHECKS).filter((p) => !only || p === only).filter((p) => {
+  if (!URLS[p] || existsSync(join(process.cwd(), URLS[p]))) return true;
+  if (process.env.REQUIRE_HOSTS) throw new Error(`${p}: build ${URLS[p]} first`);
+  console.log(`skip ${p} (not built: ${URLS[p]})`);
+  return false;
+});
 
 const pw = loadPlaywright();
 const server = await serve(0);
@@ -41,9 +51,12 @@ for (const name of browsers) {
     if (process.env.CONSOLE_LOG) p.on("console", (m) => appendFileSync(process.env.CONSOLE_LOG, `[${m.type()}] ${m.text()}\n`));
     let results;
     try {
-      await p.goto(`${base}/e2e/pages/${page}.html`);
-      await p.waitForFunction(() => window.__results?.done, null, { timeout: 90000 });
-      results = await p.evaluate(() => window.__results);
+      await p.goto(base + (URLS[page] ?? `/e2e/pages/${page}.html`));
+      if (URLS[page]) results = {};
+      else {
+        await p.waitForFunction(() => window.__results?.done, null, { timeout: 90000 });
+        results = await p.evaluate(() => window.__results);
+      }
     } catch (e) {
       results = { timeout: String(e), partial: await p.evaluate(() => window.__results).catch(() => null) };
     }

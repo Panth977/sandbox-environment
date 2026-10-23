@@ -151,7 +151,7 @@ function lineCol(src: string, offset: number): { line: number; column: number } 
 
 async function tryImport<T>(spec: string): Promise<T | null> {
   try {
-    return (await import(/* @vite-ignore */ spec)) as T;
+    return (await import(/* @vite-ignore */ /* webpackIgnore: true */ spec)) as T;
   } catch {
     return null;
   }

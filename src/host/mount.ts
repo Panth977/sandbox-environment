@@ -18,7 +18,7 @@
  *
  * @module
  */
-import { apiPaths, createEndpoint, SandboxError } from "../bridge.ts";
+import { apiPaths, createEndpoint, SandboxError, toCloneable } from "../bridge.ts";
 import type { Endpoint, Middleware, Remote } from "../bridge.ts";
 import { isSbx, PROTOCOL } from "../protocol.ts";
 import type {
@@ -245,7 +245,14 @@ export function mount<A extends object = Record<string, never>>(container: Eleme
         apiShape: apiPaths(o.api ?? {}),
         autoSize: !fill,
       };
-      iframe.contentWindow!.postMessage({ $sbx: PROTOCOL, t: "boot", protocol: PROTOCOL, boot }, "*", [ch.port2]);
+      const msg = { $sbx: PROTOCOL, t: "boot", protocol: PROTOCOL, boot };
+      try {
+        iframe.contentWindow!.postMessage(msg, "*", [ch.port2]);
+      } catch (e) {
+        // the artifact, theme or env may be reactive state (a Proxy): send a plain copy
+        if ((e as { name?: string })?.name !== "DataCloneError") throw e;
+        iframe.contentWindow!.postMessage({ ...msg, boot: toCloneable(boot) }, "*", [ch.port2]);
+      }
     };
     globalThis.addEventListener("message", onWindowMessage);
 

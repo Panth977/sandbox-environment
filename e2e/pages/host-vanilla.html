@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>e2e: plain JS host</title></head>
+<body style="font-family: system-ui, sans-serif; margin: 24px">
+<h1>Plain JS host</h1>
+<p>Total from all artifacts: <b id="total">0</b></p>
+<div id="slots"></div>
+<script type="module">
+// A host with no framework: <sbx-artifact> for two artifacts, mount() for the third.
+import "/dist/host/element.js";
+import { mount } from "/dist/host/mod.js";
+import { compile } from "/dist/compiler/mod.js";
+import { SOURCES } from "/e2e/pages/host-sources.js";
+
+window.__results = { done: true };
+let total = 0;
+const api = {
+  user: async () => ({ name: "plain JS" }),
+  counter: { add: async (n) => { total += n; document.getElementById("total").textContent = String(total); return total; } },
+};
+for (const kind of ["js", "react", "svelte"]) {
+  const section = document.createElement("section");
+  section.dataset.kind = kind;
+  section.innerHTML = `<h2 style="font-size:15px">${kind}</h2>`;
+  document.getElementById("slots").append(section);
+  const r = await compile(SOURCES[kind]);
+  if (!r.ok) { section.append(r.diagnostics.map((d) => d.message).join("; ")); continue; }
+  const ready = () => section.insertAdjacentHTML("beforeend", '<span class="ready">ready</span>');
+  if (kind === "svelte") {
+    const slot = document.createElement("div");
+    section.append(slot);
+    mount(slot, { artifact: r.artifact, api, onReady: ready });
+  } else {
+    const el = document.createElement("sbx-artifact");
+    el.artifact = r.artifact;
+    el.api = api;
+    el.addEventListener("sbx-ready", ready);
+    section.append(el);
+  }
+}
+</script>
+</body>
+</html>

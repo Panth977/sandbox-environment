@@ -425,7 +425,7 @@ export function createLanguageService(): LanguageService {
     async init(o) {
       version = o.typescriptVersion ?? version;
       packageBase = o.packageBase ?? packageBase;
-      const mod = await import(/* @vite-ignore */ o.typescriptUrl ?? `https://esm.sh/typescript@${version}`);
+      const mod = await import(/* @vite-ignore */ /* webpackIgnore: true */ o.typescriptUrl ?? `https://esm.sh/typescript@${version}`);
       ts = mod.default ?? mod;
       await loadLibs();
       addOwnTypes();

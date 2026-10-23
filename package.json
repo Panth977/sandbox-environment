@@ -1,6 +1,6 @@
 {
   "name": "@panth977/sandbox",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Run untrusted mini-apps (artifacts) inside any web app: sandboxed render engine, typed bridge, UI kit, in-browser compiler and dev engine. Zero dependencies.",
   "license": "Apache-2.0",
   "type": "module",
@@ -11,7 +11,8 @@
   "sideEffects": [
     "./dist/ui/*.js",
     "./dist/editor/*.js",
-    "./dist/dev/language-worker.js"
+    "./dist/dev/language-worker.js",
+    "./dist/host/element.js"
   ],
   "files": [
     "dist",
@@ -30,6 +31,10 @@
     "./svelte": {
       "types": "./dist/host/svelte.d.ts",
       "import": "./dist/host/svelte.js"
+    },
+    "./element": {
+      "types": "./dist/host/element.d.ts",
+      "import": "./dist/host/element.js"
     },
     "./bridge": {
       "types": "./dist/bridge.d.ts",
@@ -88,5 +93,60 @@
   },
   "bin": {
     "sbx": "./dist/compiler/cli.js"
-  }
+  },
+  "typesVersions": {
+    "*": {
+      "host": [
+        "dist/host/mod.d.ts"
+      ],
+      "svelte": [
+        "dist/host/svelte.d.ts"
+      ],
+      "element": [
+        "dist/host/element.d.ts"
+      ],
+      "bridge": [
+        "dist/bridge.d.ts"
+      ],
+      "middleware": [
+        "dist/middleware.d.ts"
+      ],
+      "protocol": [
+        "dist/protocol.d.ts"
+      ],
+      "artifact": [
+        "dist/artifact/artifact.d.ts"
+      ],
+      "stores": [
+        "dist/artifact/stores.d.ts"
+      ],
+      "react": [
+        "dist/artifact/react.d.ts"
+      ],
+      "ui": [
+        "dist/ui/index.d.ts"
+      ],
+      "compiler": [
+        "dist/compiler/mod.d.ts"
+      ],
+      "editor": [
+        "dist/editor/editor.d.ts"
+      ],
+      "dev": [
+        "dist/dev/mod.d.ts"
+      ],
+      "dev/language-worker": [
+        "dist/dev/language-worker.d.ts"
+      ],
+      "compiler/worker": [
+        "dist/compiler/worker.d.ts"
+      ],
+      "cli": [
+        "dist/compiler/cli.d.ts"
+      ]
+    }
+  },
+  "types": "./dist/mod.d.ts",
+  "module": "./dist/mod.js",
+  "main": "./dist/mod.js"
 }

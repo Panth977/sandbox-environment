@@ -286,7 +286,14 @@ export function createEndpoint<R extends object = Record<string, never>, L exten
   >();
 
   const send = (m: RpcMessage) => {
-    if (!closed) port.postMessage(m);
+    if (closed) return;
+    try {
+      port.postMessage(m);
+    } catch (e) {
+      // Reactive state (Svelte $state, Vue reactive, MobX…) is a Proxy, which postMessage cannot copy.
+      if ((e as { name?: string })?.name !== "DataCloneError") throw e;
+      port.postMessage(toCloneable(m));
+    }
   };
 
   const release = typeof FinalizationRegistry !== "undefined"
@@ -579,4 +586,44 @@ export function createEndpoint<R extends object = Record<string, never>, L exten
       port.close?.();
     },
   };
+}
+
+/**
+ * A copy postMessage can send: Proxies (reactive state of Svelte, Vue, MobX…) become plain
+ * objects and arrays; Dates, Maps, Sets, binary data, Blobs and ports pass through as they are.
+ * Functions and symbols are dropped, as structured clone would refuse them.
+ */
+export function toCloneable<T>(value: T, seen: WeakMap<object, unknown> = new WeakMap()): T {
+  if (value === null || typeof value !== "object") return (typeof value === "function" || typeof value === "symbol" ? undefined : value) as T;
+  const v = value as unknown as object;
+  if (seen.has(v)) return seen.get(v) as T;
+  const passThrough = [Date, RegExp, ArrayBuffer, DataView, globalThis.Blob, globalThis.MessagePort, globalThis.ImageData, globalThis.ReadableStream]
+    .some((C) => typeof C === "function" && v instanceof (C as unknown as new () => object));
+  if (passThrough || ArrayBuffer.isView(v)) return value;
+  if (Array.isArray(v)) {
+    const out: unknown[] = [];
+    seen.set(v, out);
+    for (const x of v) out.push(toCloneable(x, seen));
+    return out as T;
+  }
+  if (v instanceof Map) {
+    const out = new Map();
+    seen.set(v, out);
+    for (const [k, x] of v) out.set(toCloneable(k, seen), toCloneable(x, seen));
+    return out as T;
+  }
+  if (v instanceof Set) {
+    const out = new Set();
+    seen.set(v, out);
+    for (const x of v) out.add(toCloneable(x, seen));
+    return out as T;
+  }
+  if (v instanceof Error) return { name: v.name, message: v.message, stack: v.stack } as T;
+  const out: Record<string, unknown> = {};
+  seen.set(v, out);
+  for (const k of Object.keys(v)) {
+    const x = (v as Record<string, unknown>)[k];
+    if (typeof x !== "function" && typeof x !== "symbol") out[k] = toCloneable(x, seen);
+  }
+  return out as T;
 }

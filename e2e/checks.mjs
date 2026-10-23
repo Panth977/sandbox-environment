@@ -255,3 +255,26 @@ CHECKS.ui = async function (r, expect, page) {
   await f.locator("#dlg").press("Escape");
   expect(!(await f.locator("#dlg").evaluate((el) => el.open)), "Esc closes dialog");
 };
+
+// ---- hosts: the same three artifacts (plain JS, React, Svelte) in each kind of host app ----
+async function hostCheck(r, expect, page) {
+  let total = 0;
+  for (const kind of ["js", "react", "svelte"]) {
+    const section = page.locator(`section[data-kind="${kind}"]`);
+    const ok = await section.locator(".ready").waitFor({ timeout: 60000 }).then(() => true).catch(() => false);
+    expect(ok, `${kind}: artifact ready`);
+    if (!ok) continue;
+    const frame = section.frameLocator("iframe");
+    const who = await frame.locator("#who").textContent({ timeout: 20000 }).catch(() => "");
+    expect(/sees \S/.test(who) && !who.includes("…"), `${kind}: host.user() answered (${who})`);
+    await frame.locator("#add").click();
+    total += 1;
+    const count = await frame.locator("#count").filter({ hasText: String(total) }).textContent({ timeout: 10000 }).catch(() => null);
+    expect(count === String(total), `${kind}: host.counter.add() round trip (${count})`);
+    const shown = await page.locator("#total").filter({ hasText: String(total) }).count();
+    expect(shown === 1, `${kind}: the host's own view updated to ${total}`);
+  }
+}
+CHECKS["host-vanilla"] = hostCheck;
+CHECKS["host-angular15"] = hostCheck;
+CHECKS["host-svelte5"] = hostCheck;
