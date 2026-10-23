@@ -39,6 +39,23 @@ viewer's permissions, look native, and never touch your tokens.
   compiled in the browser (or a worker), modules are linked by the browser through an
   import map. The same compiler runs in Node for CI.
 
+## Install
+
+```sh
+deno add jsr:@panth977/sandbox          # Deno
+npx jsr add @panth977/sandbox           # npm, pnpm (pnpm dlx jsr add …), yarn, bun
+```
+
+Or straight from a CDN, no install (plain ES modules):
+
+```ts
+import { mount } from "https://esm.sh/jsr/@panth977/sandbox@0.2/host";
+// or the prebuilt files of a GitHub release:
+import { mount } from "https://cdn.jsdelivr.net/gh/Panth977/sandbox-environment@v0.2.2/dist/host/mod.js";
+```
+
+Published on [JSR](https://jsr.io/@panth977/sandbox) from CI on every `v*` tag.
+
 ## Quick start
 
 ### 1. Host: mount an artifact

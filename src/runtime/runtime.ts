@@ -32,12 +32,12 @@ export interface RuntimeState {
   envListeners: Set<(e: Record<string, unknown>) => void>;
 }
 
-declare global {
-  // deno-lint-ignore no-var
-  var __sbxBoot: { port: MessagePort; boot: BootPayload; urls: Record<string, string> } | undefined;
-  // deno-lint-ignore no-var
-  var __sbx: RuntimeState | undefined;
+/** The runtime's globals (typed here, not declared globally: a library must not change global types). */
+export interface RuntimeGlobals {
+  __sbxBoot?: { port: MessagePort; boot: BootPayload; urls: Record<string, string> };
+  __sbx?: RuntimeState;
 }
+const G = globalThis as unknown as RuntimeGlobals;
 
 function show(v: unknown): string {
   if (typeof v === "string") return v;
@@ -117,9 +117,9 @@ function lazyPack(pack: ComponentPackRef) {
 }
 
 async function start() {
-  const b = globalThis.__sbxBoot;
+  const b = G.__sbxBoot;
   if (!b) throw new Error("sandbox runtime started without boot data");
-  delete globalThis.__sbxBoot;
+  delete G.__sbxBoot;
   const { port, boot, urls } = b;
 
   const exposed: Record<string, unknown> = {};
@@ -152,7 +152,7 @@ async function start() {
       key === "$sbx" ? { configurable: true, enumerable: true, value: controls } : Object.getOwnPropertyDescriptor(target, key),
   });
   state.endpoint = createEndpoint<HostInternal & Record<string, unknown>>(port, { expose: api });
-  globalThis.__sbx = state;
+  G.__sbx = state;
   const host = state.endpoint.remote.$sbx;
 
   for (const level of ["log", "info", "warn", "error", "debug"] as const) {

@@ -22,7 +22,7 @@
  */
 import type { Remote } from "../bridge.ts";
 import type { ArtifactManifest, Theme } from "../protocol.ts";
-import type { RuntimeState } from "../runtime/runtime.ts";
+import type { RuntimeGlobals, RuntimeState } from "../runtime/runtime.ts";
 
 /** The host's API. Empty here; augment it with your host's interface. */
 // deno-lint-ignore no-empty-interface
@@ -34,7 +34,7 @@ export interface Env {
 }
 
 function state(): RuntimeState {
-  const s = globalThis.__sbx;
+  const s = (globalThis as unknown as RuntimeGlobals).__sbx;
   if (!s) throw new Error("@panth977/sandbox/artifact used outside a sandbox runtime");
   return s;
 }
@@ -99,7 +99,7 @@ export function onEnv(cb: (e: Env) => void): () => void {
 
 /** True inside a sandbox runtime. */
 export function inSandbox(): boolean {
-  return !!globalThis.__sbx;
+  return !!(globalThis as unknown as RuntimeGlobals).__sbx;
 }
 
 export { SandboxError } from "../bridge.ts";

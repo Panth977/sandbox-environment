@@ -123,9 +123,11 @@ CHECKS.dev = async function (r, expect, page) {
   expect(await page.locator(".sbx-dev__tab").count() === before - 1, "tab closes");
   // find in the editor (Monaco's find widget)
   await tree.locator('.sbx-tree__row[data-path="/App.tsx"]').click();
-  await page.evaluate(() => window.__dev.goTo(1, 1));
-  await page.keyboard.press("ControlOrMeta+f");
-  await page.keyboard.type("rows");
+  await page.evaluate(() => {
+    window.__dev.goTo(1, 1);
+    return window.__dev.editor.getAction("actions.find").run();
+  });
+  await page.locator(".find-widget textarea, .find-widget input").first().fill("rows");
   const count = await page.locator(".find-widget .matchesCount").textContent({ timeout: 5000 }).catch(() => "");
   expect(/^1 of [2-9]/.test(count), `find counts matches (${count})`);
   await page.keyboard.press("Escape");
