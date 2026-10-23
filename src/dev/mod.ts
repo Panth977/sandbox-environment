@@ -336,6 +336,10 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
         await lspReady;
         return lsp ? await lsp.completions(current, pos) : null;
       };
+      editor.completionDetail = async (pos, label) => {
+        await lspReady;
+        return lsp ? await lsp.completionDetails(current, pos, label) : null;
+      };
       editor.hover = async (pos) => {
         await lspReady;
         return lsp ? await lsp.quickInfo(current, pos) : null;
@@ -485,7 +489,14 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
 
   // ---- panel + status -----------------------------------------------------
   function allProblems(): Problem[] {
-    return [...compileProblems, ...[...tsProblems.values()].flat()];
+    // The compiler and the type checker often report the same syntax error: show it once.
+    const seen = new Set<string>();
+    return [...compileProblems, ...[...tsProblems.values()].flat()].filter((p) => {
+      const k = `${p.file}:${p.line}:${p.column}:${p.message}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
   }
 
   function renderPanel() {

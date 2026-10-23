@@ -139,7 +139,9 @@ mountDev(document.getElementById("ide")!, { files, api, hostTypes, onSave: (file
 Left: a file explorer (folders; create, rename, drag to move, delete) and a typed editor
 with tabs, find/replace and a status bar. TypeScript diagnostics, completions and hover come
 from your `hostTypes`, the UI kit and npm types fetched on demand — in `.ts/.tsx/.js` files and
-in `.svelte` files (script blocks and template expressions, runes and `$store` reads typed). Right: the same
+in `.svelte` files (script blocks and template expressions, runes and `$store` reads typed).
+Completions say what each item is — object (of methods), method, property — with its short type,
+and a pane beside the list shows the full signature, an object's members and the docs. Right: the same
 sandbox viewers get. Bottom: problems and console.
 
 ## The UI kit

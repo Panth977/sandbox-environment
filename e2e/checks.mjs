@@ -157,6 +157,25 @@ CHECKS.dev = async function (r, expect, page) {
   };
   const tsx = await typeAndSee("/App.tsx", "host.devices.");
   expect(tsx.includes("list"), `typing host.devices. in .tsx pops completions (${tsx.slice(0, 120)})`);
+  // an object of methods says so, and the pane beside the list shows its members
+  await tree.locator('.sbx-tree__row[data-path="/App.tsx"]').click();
+  await page.evaluate(() => window.__dev.setFile("/App.tsx", window.__dev.files()["/App.tsx"].replace(/\nhost\.devices\.\n?$/, "\n")));
+  await page.locator("sbx-editor textarea").click();
+  await page.evaluate(() => document.querySelector("sbx-editor").goTo(8, 200));
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("host.", { delay: 40 });
+  // wait for the settled list and pane (results arrive as you type)
+  const settled = await page.waitForFunction(() => {
+    const ed = document.querySelector("sbx-editor");
+    const it = [...ed.shadowRoot.querySelectorAll(".pop .item")].find((x) => x.textContent.includes("devices"));
+    const pane = ed.shadowRoot.querySelector(".pop-detail");
+    const kind = it?.querySelector(".kind")?.className ?? "";
+    const text = pane && pane.style.display === "block" ? pane.textContent : "";
+    return /\bobject\b/.test(kind) && /list\(q\?/.test(text) ? { kind, text } : null;
+  }, null, { timeout: 30000 }).then((h) => h.jsonValue()).catch(() => null);
+  expect(!!settled, "host.devices is shown as an object, and the pane lists its members");
+  expect(/Devices the viewer can see/.test(settled?.text ?? ""), `pane shows member docs (${(settled?.text ?? "").slice(0, 160)})`);
+  await page.keyboard.press("Escape");
   // a Svelte file gets the same: script blocks and template expressions
   await page.evaluate(() => window.__dev.setFile("/Card.svelte", '<script lang="ts">\n  import { host } from "@panth977/sandbox/artifact";\n  let total = $state(0);\n</script>\n<p>{total}</p>\n'));
   await page.waitForTimeout(500);

@@ -23,6 +23,16 @@ export interface LanguageInit {
   packageBase?: string;
 }
 
+export interface CompletionDetails {
+  /** "method" · "object" · "property" · "function" · … */
+  kind: string;
+  /** e.g. `(property) kv: { get, set, delete }` or `get(key: string): Promise<unknown>` */
+  title: string;
+  /** For an object: one entry per member, `get(key: string): Promise<unknown>` / `name: string`, with its doc's first line. */
+  members?: { text: string; doc?: string }[];
+  doc?: string;
+}
+
 export interface LspDiagnostic {
   from: number;
   to: number;
@@ -39,6 +49,8 @@ export interface LanguageService {
   setHostTypes(dts: string): Promise<void>;
   diagnostics(path: string): Promise<LspDiagnostic[]>;
   completions(path: string, pos: number): Promise<{ from: number; items: { label: string; kind: string; detail?: string }[] } | null>;
+  /** The full picture of one completion item: its signature, an object's members, the docs. */
+  completionDetails(path: string, pos: number, name: string): Promise<CompletionDetails | null>;
   quickInfo(path: string, pos: number): Promise<string | null>;
 }
 
@@ -79,7 +91,6 @@ declare module "*.txt" { const text: string; export default text; }
 declare module "*.md" { const text: string; export default text; }
 `;
 
-const KIND: Record<string, string> = { method: "m", function: "f", property: "p", var: "v", let: "v", const: "c", class: "C", interface: "I", type: "T", keyword: "k", module: "M" };
 
 /** Creates the service object (used inside the worker). */
 export function createLanguageService(): LanguageService {
@@ -310,6 +321,47 @@ export function createLanguageService(): LanguageService {
     };
   }
 
+  /** What a symbol is, for people: method / object (of members) / property, a short type, and an object's members. */
+  function describe(checker: any, sym: any): { kind: string; short: string; members?: { text: string; doc?: string }[] } | null {
+    if (!sym) return null;
+    let type: any;
+    try {
+      type = typeof checker.getTypeOfSymbol === "function"
+        ? checker.getTypeOfSymbol(sym)
+        : checker.getTypeOfSymbolAtLocation(sym, sym.valueDeclaration ?? sym.declarations?.[0]);
+    } catch {
+      return null;
+    }
+    if (!type) return null;
+    const cut = (s: string, n = 60) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+    const sigs = type.getCallSignatures?.() ?? [];
+    if (sigs.length) return { kind: "method", short: cut(checker.signatureToString(sigs[0])) };
+    const objectish = (type.flags & ts.TypeFlags.Object) !== 0 && !checker.isArrayType?.(type);
+    const props = objectish ? type.getProperties() : [];
+    if (props.length) {
+      const names = props.map((p: any) => p.name);
+      const members = props.slice(0, 40).map((p: any) => {
+        let t: any;
+        try {
+          t = typeof checker.getTypeOfSymbol === "function" ? checker.getTypeOfSymbol(p) : checker.getTypeOfSymbolAtLocation(p, p.valueDeclaration ?? p.declarations?.[0]);
+        } catch {
+          return p.name;
+        }
+        const cs = t?.getCallSignatures?.() ?? [];
+        const text = cs.length ? `${p.name}${checker.signatureToString(cs[0])}` : `${p.name}: ${cut(checker.typeToString(t), 80)}`;
+        // A mapped type's member (Remote<…>) carries no comment itself: ask the original declaration.
+        let doc = "";
+        try {
+          doc = ts.displayPartsToString(p.getDocumentationComment(checker)) ||
+            ts.displayPartsToString((p as any).links?.syntheticOrigin?.getDocumentationComment?.(checker) ?? []);
+        } catch { /* no docs */ }
+        return doc ? { text, doc: doc.split("\n")[0] } : { text };
+      });
+      return { kind: "object", short: `{ ${names.slice(0, 4).join(", ")}${names.length > 4 ? ", …" : ""} }`, members };
+    }
+    return { kind: "property", short: cut(checker.typeToString(type)) };
+  }
+
   const isTsLike = (p: string) => /\.(tsx?|jsx?|mjs)$/.test(p);
   // .svelte files are checked as a same-length virtual TS file (./svelte.ts): offsets map 1:1.
   const isSvelte = (p: string) => p.endsWith(".svelte");
@@ -386,19 +438,52 @@ export function createLanguageService(): LanguageService {
       const text = files.get(p)!.text;
       let from = pos;
       while (from > 0 && /[\w$]/.test(text[from - 1])) from--;
-      const items = r.entries
+      const sorted = r.entries
         .filter((e: any) => !e.name.startsWith("__"))
         .sort((a: any, b: any) => (a.sortText < b.sortText ? -1 : a.sortText > b.sortText ? 1 : a.name.localeCompare(b.name)))
-        .slice(0, 300)
-        .map((e: any) => ({ label: e.name, kind: KIND[e.kind] ?? e.kind?.[0] ?? "", detail: e.kind }));
+        .slice(0, 300);
+      const checker = service.getProgram()?.getTypeChecker();
+      const items = sorted.map((e: any, i: number) => {
+        // Member access lists (host.kv.…) are short: say what each one IS — a method, an object of
+        // methods, a value — with its short type. Long global lists keep the plain kind.
+        const shape = checker && i < 80 && r.isMemberCompletion ? describe(checker, service.getCompletionEntrySymbol(p, pos, e.name, e.source)) : null;
+        return shape
+          ? { label: e.name, kind: shape.kind, detail: shape.short }
+          : { label: e.name, kind: e.kind ?? "", detail: e.kind };
+      });
       return { from, items };
+    },
+    async completionDetails(path, pos, name) {
+      const p = lsPath(path);
+      if (!service || !files.has(p)) return null;
+      const d = service.getCompletionEntryDetails(p, pos, name, {}, undefined, undefined, undefined);
+      if (!d) return null;
+      const checker = service.getProgram()?.getTypeChecker();
+      const shape = checker ? describe(checker, service.getCompletionEntrySymbol(p, pos, name, undefined)) : null;
+      const doc = [ts.displayPartsToString(d.documentation ?? []), ...(d.tags ?? []).map((t: any) => `@${t.name} ${ts.displayPartsToString(t.text ?? [])}`.trim())]
+        .filter(Boolean).join("\n");
+      return {
+        kind: shape?.kind ?? d.kind,
+        title: shape?.kind === "object" ? `(${d.kind}) ${name}: ${shape.short}` : ts.displayPartsToString(d.displayParts),
+        ...(shape?.members ? { members: shape.members } : {}),
+        ...(doc ? { doc } : {}),
+      };
     },
     async quickInfo(path, pos) {
       const p = lsPath(path);
       if (!service || !files.has(p)) return null;
       const q = service.getQuickInfoAtPosition(p, pos);
       if (!q) return null;
-      const sig = ts.displayPartsToString(q.displayParts);
+      let sig = ts.displayPartsToString(q.displayParts);
+      // An object of members (host.tickets, host.kv …): list them, one per line.
+      const checker = service.getProgram()?.getTypeChecker();
+      const sf = service.getProgram()?.getSourceFile(p);
+      const token = sf && typeof ts.getTokenAtPosition === "function" ? ts.getTokenAtPosition(sf, q.textSpan.start) : null;
+      const sym = checker && token ? checker.getSymbolAtLocation(token) : null;
+      const shape = checker && sym ? describe(checker, sym) : null;
+      if (shape?.kind === "object" && shape.members) {
+        sig = `${sig.split(":")[0]}: {\n${shape.members.map((m) => (m.doc ? `  /** ${m.doc} */\n` : "") + "  " + m.text + ";").join("\n")}\n}`;
+      }
       const doc = ts.displayPartsToString(q.documentation ?? []);
       return doc ? `${sig}\n\n${doc}` : sig;
     },

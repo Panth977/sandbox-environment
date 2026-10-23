@@ -38,6 +38,15 @@ export interface CompletionItem {
   kind?: string;
 }
 
+export interface CompletionDetail {
+  kind?: string;
+  /** The signature / declaration line. */
+  title: string;
+  /** An object's members, one per line, with a short doc. */
+  members?: { text: string; doc?: string }[];
+  doc?: string;
+}
+
 export interface CompletionResult {
   /** Offset where the replaced word starts. */
   from: number;
@@ -68,8 +77,21 @@ textarea::selection { background: color-mix(in srgb, var(--sbx-accent) 30%, tran
   border: 1px solid var(--sbx-line); border-radius: var(--sbx-radius); box-shadow: var(--sbx-shadow); padding: 2px 0; font-size: 12.5px; display: none; }
 .pop .item { display: flex; gap: 10px; padding: 3px 10px; min-height: 22px; cursor: pointer; white-space: nowrap; }
 .pop .item.active { background: var(--sbx-accent-soft); }
-.pop .detail { margin-left: auto; color: var(--sbx-muted); overflow: hidden; text-overflow: ellipsis; }
-.pop .kind { color: var(--sbx-subtle); width: 14px; }
+.pop .detail { margin-left: auto; padding-left: 16px; color: var(--sbx-muted); overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+.pop .kind { flex: none; width: 16px; height: 16px; border-radius: 3px; display: inline-grid; place-items: center; font-size: 10px; font-weight: 600;
+  color: var(--sbx-muted); background: var(--sbx-surface-2); }
+.pop .kind.method, .pop .kind.function { color: #a626a4; background: color-mix(in srgb, #a626a4 12%, transparent); }
+.pop .kind.object, .pop .kind.module { color: #b35900; background: color-mix(in srgb, #b35900 12%, transparent); }
+.pop .kind.property, .pop .kind.var, .pop .kind.let, .pop .kind.const { color: #1d6fb8; background: color-mix(in srgb, #1d6fb8 12%, transparent); }
+.pop .kind.class, .pop .kind.interface, .pop .kind.type { color: #0a7f3f; background: color-mix(in srgb, #0a7f3f 12%, transparent); }
+.pop-detail { position: fixed; z-index: 10; width: 380px; max-height: 300px; overflow: auto; padding: 8px 10px; background: var(--sbx-surface);
+  border: 1px solid var(--sbx-line); border-radius: var(--sbx-radius); box-shadow: var(--sbx-shadow); font-size: 12px; display: none; }
+.pop-detail .sig { font-family: var(--sbx-font-mono); white-space: pre-wrap; word-break: break-word; color: var(--sbx-text); }
+.pop-detail .members { margin: 6px 0 0; padding: 6px 0 0; border-top: 1px solid var(--sbx-line); list-style: none; font-family: var(--sbx-font-mono); }
+.pop-detail .members li { padding: 1px 0; white-space: pre-wrap; word-break: break-word; }
+.pop-detail .members .n { color: #a626a4; }
+.pop-detail .members .mdoc { font-family: var(--sbx-font); color: var(--sbx-muted); padding: 0 0 3px 12px; }
+.pop-detail .doc { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--sbx-line); color: var(--sbx-muted); font-family: var(--sbx-font); white-space: pre-wrap; }
 textarea:focus, textarea:focus-visible { outline: none; }
 .line-hl { position: absolute; left: 0; right: 0; height: 20px; background: color-mix(in srgb, var(--sbx-accent) 6%, transparent); pointer-events: none; }
 .findhl { color: transparent; }
@@ -118,6 +140,8 @@ export class SbxEditor extends ElementBase {
   completions: ((pos: number, value: string) => Promise<CompletionResult | null> | CompletionResult | null) | null = null;
   /** Hover provider (plain text). */
   hover: ((pos: number, value: string) => Promise<string | null> | string | null) | null = null;
+  /** Details of the highlighted completion: signature, an object's members, docs. */
+  completionDetail: ((pos: number, label: string) => Promise<CompletionDetail | null> | CompletionDetail | null) | null = null;
 
   connectedCallback(): void {
     if (!this.#root) {
@@ -139,7 +163,7 @@ export class SbxEditor extends ElementBase {
           <div class="row"><input class="r" placeholder="Replace" aria-label="Replace" spellcheck="false">
             <button data-f="one" title="Replace">Replace</button><button data-f="all" title="Replace all">All</button></div>
         </div>
-        <div class="pop" role="listbox"></div><div class="hover" role="tooltip"></div>`);
+        <div class="pop" role="listbox"></div><div class="pop-detail" aria-live="polite"></div><div class="hover" role="tooltip"></div>`);
       this.#ta = this.#root.querySelector("textarea")!;
       this.#code = this.#root.querySelector(".code")!;
       this.#diag = this.#root.querySelector(".diag")!;
@@ -189,6 +213,7 @@ export class SbxEditor extends ElementBase {
   set value(v: string) {
     this.#value = String(v ?? "");
     if (this.#ta && this.#ta.value !== this.#value) this.#ta.value = this.#value;
+    this.#detailCache?.clear();
     this.#schedule();
     if (this.#root && !this.#root.querySelector<HTMLElement>(".find")!.hidden) this.#search(false);
   }
@@ -623,7 +648,7 @@ export class SbxEditor extends ElementBase {
   #renderPop() {
     const p = this.#pop;
     p.innerHTML = this.#items.map((it, i) =>
-      `<div class="item${i === this.#active ? " active" : ""}" data-i="${i}" role="option"><span class="kind">${esc((it.kind ?? "")[0] ?? "")}</span>` +
+      `<div class="item${i === this.#active ? " active" : ""}" data-i="${i}" role="option"><span class="kind ${esc(it.kind ?? "")}" title="${esc(it.kind ?? "")}">${esc((it.kind ?? "")[0] ?? "")}</span>` +
       `<span>${esc(it.label)}</span>${it.detail ? `<span class="detail">${esc(it.detail)}</span>` : ""}</div>`
     ).join("");
     const { x, y } = this.#caretXY(this.#from);
@@ -631,6 +656,51 @@ export class SbxEditor extends ElementBase {
     p.style.left = `${Math.min(x, innerWidth - p.offsetWidth - 4)}px`;
     p.style.top = `${y + 2 + p.offsetHeight > innerHeight ? y - 22 - p.offsetHeight : y + 2}px`;
     p.querySelector(".active")?.scrollIntoView({ block: "nearest" });
+    this.#showDetail();
+  }
+
+  #detailSeq = 0;
+  #detailCache = new Map<string, CompletionDetail | null>();
+  #detailTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The pane beside the list: what the highlighted item is (an object's members, a signature, docs). */
+  #showDetail() {
+    const pane = this.#root.querySelector<HTMLElement>(".pop-detail")!;
+    const it = this.#items[this.#active];
+    if (!it || !this.completionDetail) {
+      pane.style.display = "none";
+      return;
+    }
+    const key = `${this.#from}:${it.label}`;
+    const draw = (d: CompletionDetail | null) => {
+      if (!d || this.#pop.style.display !== "block") {
+        pane.style.display = "none";
+        return;
+      }
+      const member = (m: { text: string; doc?: string }) => {
+        const k = /^[\w$]+/.exec(m.text)?.[0] ?? "";
+        return `<li><span class="n">${esc(k)}</span>${esc(m.text.slice(k.length))}${m.doc ? `<div class="mdoc">${esc(m.doc)}</div>` : ""}</li>`;
+      };
+      pane.dataset.key = key;
+      pane.innerHTML = `<div class="sig">${esc(d.title)}</div>` +
+        (d.members?.length ? `<ul class="members">${d.members.map(member).join("")}</ul>` : "") +
+        (d.doc ? `<div class="doc">${esc(d.doc)}</div>` : "");
+      pane.style.display = "block";
+      const r = this.#pop.getBoundingClientRect();
+      const right = r.right + 4 + pane.offsetWidth <= innerWidth;
+      pane.style.left = `${right ? r.right + 4 : Math.max(4, r.left - 4 - pane.offsetWidth)}px`;
+      pane.style.top = `${r.top}px`;
+    };
+    if (this.#detailCache.has(key)) return draw(this.#detailCache.get(key)!);
+    // Never leave another item's details on screen while this one loads.
+    if (pane.dataset.key !== key) pane.style.display = "none";
+    pane.dataset.key = key;
+    const my = ++this.#detailSeq;
+    if (this.#detailTimer) clearTimeout(this.#detailTimer);
+    this.#detailTimer = setTimeout(async () => {
+      const d = await this.completionDetail!(this.#ta.selectionStart, it.label);
+      this.#detailCache.set(key, d);
+      if (my === this.#detailSeq) draw(d);
+    }, 40);
   }
 
   #accept(i: number) {
@@ -642,6 +712,10 @@ export class SbxEditor extends ElementBase {
 
   #closePop() {
     if (this.#pop) this.#pop.style.display = "none";
+    const pane = this.#root?.querySelector<HTMLElement>(".pop-detail");
+    if (pane) pane.style.display = "none";
+    this.#detailSeq++;
+    if (this.#detailCache.size > 200) this.#detailCache.clear();
   }
 
   #posAt(e: MouseEvent): number | null {

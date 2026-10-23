@@ -104,3 +104,9 @@ test("plain .ts files compile without JSX warnings", { skip: !TS && "typescript 
   assert.equal(r.ok, true);
   assert.deepEqual(r.diagnostics, []);
 });
+
+test("a TypeScript syntax error fails the build (the last good one keeps running)", { skip: !TS && "typescript not found" }, async () => {
+  const r = await compile({ "/index.ts": `const a = 1;\nhost.;\n` }, { typescript: async () => TS, sourcemap: false });
+  assert.equal(r.ok, false);
+  assert.ok(r.diagnostics.some((d) => d.severity === "error" && d.line === 2));
+});

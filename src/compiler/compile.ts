@@ -67,6 +67,8 @@ export interface PluginContext {
   typescript(): Promise<TsLike>;
   svelte(): Promise<SvelteLike>;
   warn(message: string, line?: number, column?: number): void;
+  /** A problem that makes the file unusable (the build fails, the previous one keeps running). */
+  error(message: string, line?: number, column?: number): void;
 }
 
 export interface CompileOptions {
@@ -194,7 +196,9 @@ const BUILTIN: Plugin[] = [
       for (const d of r.diagnostics ?? []) {
         const msg = typeof d.messageText === "string" ? d.messageText : ts.flattenDiagnosticMessageText?.(d.messageText, "\n") ?? String(d.messageText);
         const lc = d.start != null ? lineCol(code, d.start) : undefined;
-        ctx.warn(msg, lc?.line, lc?.column);
+        // Syntax errors (category 1) break the module: fail the build instead of shipping it.
+        if (d.category === 1) ctx.error(msg, lc?.line, lc?.column);
+        else ctx.warn(msg, lc?.line, lc?.column);
       }
       return r.outputText;
     },
@@ -306,7 +310,9 @@ export async function compile(input: SourceFiles, options: CompileOptions = {}):
     let js: string | null = null;
     const warn = (message: string, line?: number, column?: number) =>
       diagnostics.push({ file: path, line, column, message, severity: "warning", source: "transform" });
-    const ctx: PluginContext = { options: { jsx, sourcemap }, manifest, typescript: loadTs, svelte: loadSvelte, warn };
+    const error = (message: string, line?: number, column?: number) =>
+      diagnostics.push({ file: path, line, column, message, severity: "error", source: "transform" });
+    const ctx: PluginContext = { options: { jsx, sourcemap }, manifest, typescript: loadTs, svelte: loadSvelte, warn, error };
     try {
       for (const p of plugins) {
         if (!p.test(path)) continue;
