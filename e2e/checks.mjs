@@ -59,7 +59,7 @@ CHECKS.dev = async function (r, expect, page) {
   const r2 = await page.evaluate(() => window.__results);
   expect(r2.builds[0] === true, `first build ok (${r2.builds})`);
   const frame = page.frameLocator(".sbx-dev__preview iframe");
-  const h = await frame.locator("#h").textContent({ timeout: 30000 }).catch(() => null);
+  const h = await frame.locator("#h").filter({ hasText: "2 devices" }).textContent({ timeout: 30000 }).catch(() => null);
   expect(h === "2 devices", `preview renders host data (${h})`);
   // TypeScript diagnostics (TS + libs + @types/react fetched from CDNs)
   const problem = await page.waitForFunction(() => {

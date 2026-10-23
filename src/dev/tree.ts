@@ -76,6 +76,13 @@ function iconFor(name: string): string {
   return `<span class="sbx-tree__icon" style="color:${color}">${esc(label)}</span>`;
 }
 
+const folderIcon = (open: boolean) =>
+  `<span class="sbx-tree__icon" style="color:var(--sbx-accent)"><svg width="14" height="12" viewBox="0 0 14 12" aria-hidden="true" style="vertical-align:-1px">` +
+  (open
+    ? `<path d="M1 2.5V10a1 1 0 0 0 1 1h9.2a1 1 0 0 0 .95-.7L13.6 5.6A.8.8 0 0 0 12.85 4.5H4.2a1 1 0 0 0-.95.7L2 9M1 2.5A1 1 0 0 1 2 1.5h3l1.2 1.5H11a1 1 0 0 1 1 1v.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/>`
+    : `<path d="M1 2.5A1 1 0 0 1 2 1.5h3l1.2 1.5H12a1 1 0 0 1 1 1V10a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1z" fill="currentColor" fill-opacity=".18" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/>`) +
+  `</svg></span>`;
+
 /** Path → its parent folder ('/' for top level). */
 export const parentOf = (p: string): string => p.slice(0, p.lastIndexOf("/")) || "/";
 
@@ -154,7 +161,7 @@ export function createTree(el: HTMLElement, cb: TreeCallbacks) {
         `<div class="sbx-tree__row${focus === c.path ? " focus" : ""}" role="treeitem" draggable="${!state.readOnly}" data-path="${esc(c.path)}"` +
           ` data-folder="${c.folder}" style="padding-left:${pad}px"${c.folder ? ` aria-expanded="${open}"` : ` aria-selected="${c.path === state.active}"`}>` +
           `<span class="sbx-tree__chev">${c.folder ? "▶" : ""}</span>` +
-          (c.folder ? `<span class="sbx-tree__icon" style="color:var(--sbx-muted)">${open ? "▾" : "▸"}</span>` : iconFor(c.name)) +
+          (c.folder ? folderIcon(open) : iconFor(c.name)) +
           `<span class="sbx-tree__name${mark ? " " + mark : ""}">${esc(c.name)}</span>` +
           (mark && !c.folder ? `<span class="sbx-tree__mark ${mark}"></span>` : "") +
           (state.readOnly ? "" : `<span class="sbx-tree__acts">${c.folder ? `<button data-act="new-in" title="New file here">＋</button>` : ""}` +
@@ -167,7 +174,7 @@ export function createTree(el: HTMLElement, cb: TreeCallbacks) {
 
   function inputRow(depth: number, folder: boolean, value = ""): string {
     return `<div class="sbx-tree__row" style="padding-left:${8 + depth * 14}px"><span class="sbx-tree__chev"></span>` +
-      (folder ? `<span class="sbx-tree__icon">▸</span>` : `<span class="sbx-tree__icon">·</span>`) +
+      (folder ? folderIcon(false) : `<span class="sbx-tree__icon">·</span>`) +
       `<input class="sbx-tree__input" value="${esc(value)}" aria-label="${folder ? "Folder" : "File"} name" spellcheck="false"></div>` +
       (editError ? `<div class="sbx-tree__err">${esc(editError)}</div>` : "");
   }
