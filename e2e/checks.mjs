@@ -16,6 +16,11 @@ export const CHECKS = {
     expect(r.parentDom === "blocked", "parent DOM unreachable");
     expect(r.origin === "null", `opaque origin (${r.origin})`);
     expect(r.defined?.length === 8, `UI kit defined (${r.defined})`);
+    expect(Array.isArray(r.lazyBefore) && r.lazyBefore.length === 0, `no component code loaded before use (${r.lazyBefore})`);
+    expect(JSON.stringify(r.lazyAfter) === '["sbx-table"]', `only the rendered component loads (${r.lazyAfter})`);
+    expect(r.packBefore === false, "plain pack not loaded before its tag appears");
+    expect(r.packText === "hello from pack | kit Asha", `lazy host packs render (${r.packText})`);
+    expect(r.rowsBeforeLoad === 2, `properties set before the code loaded are kept (${r.rowsBeforeLoad})`);
     expect(r.themeMode === "dark", "theme passed at boot");
     expect(r.accentVar === "#7089f5", `dark tokens applied (${r.accentVar})`);
     expect(r.themeChanged === "light", "theme pushed live");
@@ -135,6 +140,40 @@ CHECKS.dev = async function (r, expect, page) {
   expect(/^Ln \d+, Col \d+/.test(pos), `status shows cursor (${pos})`);
   const lang = await page.locator(".sbx-dev__status [data-s=lang]").textContent();
   expect(lang === "TypeScript JSX", `status shows language (${lang})`);
+
+  // ---- completions while typing (what a person sees) ----
+  const typeAndSee = async (path, text) => {
+    await tree.locator(`.sbx-tree__row[data-path="${path}"]`).click();
+    const ta = page.locator("sbx-editor textarea");
+    await ta.click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type(text, { delay: 40 });
+    const pop = page.locator("sbx-editor .pop");
+    await pop.waitFor({ state: "visible", timeout: 30000 }).catch(() => {});
+    const labels = await pop.locator(".item").allTextContents().catch(() => []);
+    await page.keyboard.press("Escape");
+    return labels.join(" ");
+  };
+  const tsx = await typeAndSee("/App.tsx", "host.devices.");
+  expect(tsx.includes("list"), `typing host.devices. in .tsx pops completions (${tsx.slice(0, 120)})`);
+  // a Svelte file gets the same: script blocks and template expressions
+  await page.evaluate(() => window.__dev.setFile("/Card.svelte", '<script lang="ts">\n  import { host } from "@panth977/sandbox/artifact";\n  let total = $state(0);\n</script>\n<p>{total}</p>\n'));
+  await page.waitForTimeout(500);
+  await tree.locator('.sbx-tree__row[data-path="/Card.svelte"]').click();
+  await page.locator("sbx-editor textarea").click();
+  // put the cursor at the end of line 3 (inside the script) and type
+  await page.evaluate(() => {
+    const ed = document.querySelector("sbx-editor");
+    ed.goTo(3, 100);
+  });
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("host.devices.", { delay: 40 });
+  const spop = page.locator("sbx-editor .pop");
+  await spop.waitFor({ state: "visible", timeout: 30000 }).catch(() => {});
+  const sv = (await spop.locator(".item").allTextContents().catch(() => [])).join(" ");
+  expect(sv.includes("list"), `typing host.devices. in .svelte pops completions (${sv.slice(0, 120)})`);
+  await page.keyboard.press("Escape");
 };
 
 CHECKS.ui = async function (r, expect, page) {
@@ -171,6 +210,7 @@ CHECKS.ui = async function (r, expect, page) {
   // menu + toast
   await f.locator("sbx-menu [slot=trigger]").click();
   await f.locator("sbx-menu .item", { hasText: "Share" }).click();
+  await f.locator("sbx-toaster").evaluate((el) => new Promise((r) => { const t = () => (el.shadowRoot?.textContent ? r() : setTimeout(t, 20)); t(); }));
   const toastText = await f.locator("sbx-toaster").evaluate((el) => el.shadowRoot.textContent);
   expect(toastText.includes("Menu: share"), `menu select → toast (${toastText})`);
   // dialog via keyboard

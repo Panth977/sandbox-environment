@@ -28,21 +28,28 @@ const CSS = `
 `;
 
 export class SbxMenu extends ElementBase {
-  #items: MenuItem[] = [];
-  #fromChildren = true;
-  #root!: ShadowRoot;
-  #popup!: Popup;
-  #active = -1;
-  #id = uid("menu");
-  #mo: MutationObserver | null = null;
+  _init(): void {
+    this._items = [];
+    this._fromChildren = true;
+    this._active = -1;
+    this._id = uid("menu");
+    this._mo = null;
+  }
+  declare _items: MenuItem[];
+  declare _fromChildren: boolean;
+  declare _root: ShadowRoot;
+  declare _popup: Popup;
+  declare _active: number;
+  declare _id: string;
+  declare _mo: MutationObserver | null;
 
-  connectedCallback(): void {
-    if (!this.#root) {
-      this.#root = shadow(this, CSS, `<slot name="trigger"></slot><div class="list" role="menu" id="${this.#id}" part="menu"></div>`);
-      const list = this.#root.querySelector<HTMLElement>(".list")!;
-      const slot = this.#root.querySelector<HTMLSlotElement>("slot")!;
+  _connected(): void {
+    if (!this._root) {
+      this._root = shadow(this, CSS, `<slot name="trigger"></slot><div class="list" role="menu" id="${this._id}" part="menu"></div>`);
+      const list = this._root.querySelector<HTMLElement>(".list")!;
+      const slot = this._root.querySelector<HTMLSlotElement>("slot")!;
       const trigger = () => slot.assignedElements()[0] as HTMLElement | undefined;
-      this.#popup = new Popup(list, this, {
+      this._popup = new Popup(list, this, {
         placement: (this.getAttribute("placement") as Placement) ?? "bottom-start",
         onClose: () => trigger()?.setAttribute("aria-expanded", "false"),
       });
@@ -52,55 +59,55 @@ export class SbxMenu extends ElementBase {
         t?.setAttribute("aria-expanded", "false");
       });
       this.addEventListener("click", (e) => {
-        if ((e.target as Element).closest('[slot="trigger"]')) this.#toggle();
+        if ((e.target as Element).closest('[slot="trigger"]')) this._toggle();
       });
       this.addEventListener("keydown", (e) => {
         if (!(e.target as Element).closest('[slot="trigger"]')) return;
         if (e.key === "ArrowDown" || e.key === "ArrowUp") {
           e.preventDefault();
-          if (!this.#popup.open) this.#open(e.key === "ArrowUp" ? "End" : "Home");
+          if (!this._popup.open) this._open(e.key === "ArrowUp" ? "End" : "Home");
         }
       });
       list.addEventListener("pointerdown", (e) => e.preventDefault());
       list.addEventListener("click", (e) => {
         const it = (e.target as Element).closest<HTMLElement>(".item");
-        if (it) this.#choose(Number(it.dataset.i));
+        if (it) this._choose(Number(it.dataset.i));
       });
       list.addEventListener("pointermove", (e) => {
         const it = (e.target as Element).closest<HTMLElement>(".item");
-        if (it) this.#setActive(Number(it.dataset.i));
+        if (it) this._setActive(Number(it.dataset.i));
       });
-      list.addEventListener("keydown", (e) => this.#key(e));
+      list.addEventListener("keydown", (e) => this._key(e));
     }
-    this.#mo = new MutationObserver(() => this.#fromChildren && this.#read());
-    this.#mo.observe(this, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["value", "disabled", "danger", "shortcut", "checked"] });
-    this.#read();
+    this._mo = new MutationObserver(() => this._fromChildren && this._read());
+    this._mo.observe(this, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["value", "disabled", "danger", "shortcut", "checked"] });
+    this._read();
   }
 
-  disconnectedCallback(): void {
-    this.#mo?.disconnect();
-    this.#popup?.hide();
+  _disconnected(): void {
+    this._mo?.disconnect();
+    this._popup?.hide();
   }
 
   get items(): MenuItem[] {
-    return this.#items;
+    return this._items;
   }
   set items(v: MenuItem[]) {
-    this.#fromChildren = false;
-    this.#items = Array.isArray(v) ? v : [];
-    if (this.#popup?.open) this.#render();
+    this._fromChildren = false;
+    this._items = Array.isArray(v) ? v : [];
+    if (this._popup?.open) this._render();
   }
 
   /** Opens the menu (focus goes to the first item). */
   show(): void {
-    this.#open("Home");
+    this._open("Home");
   }
   hide(): void {
-    this.#popup?.hide();
+    this._popup?.hide();
   }
 
-  #read() {
-    if (!this.#fromChildren) return;
+  _read() {
+    if (!this._fromChildren) return;
     const items: MenuItem[] = [];
     for (const c of Array.from(this.children)) {
       if (c.slot === "trigger") continue;
@@ -118,86 +125,76 @@ export class SbxMenu extends ElementBase {
         });
       }
     }
-    this.#items = items;
+    this._items = items;
   }
 
-  #render() {
-    const list = this.#root.querySelector<HTMLElement>(".list")!;
+  _render() {
+    const list = this._root.querySelector<HTMLElement>(".list")!;
     let html = "";
-    this.#items.forEach((it, i) => {
+    this._items.forEach((it, i) => {
       if ("separator" in it) html += `<div class="sep" role="separator"></div>`;
       else if ("group" in it) html += `<div class="group" role="presentation">${esc(it.group)}</div>`;
       else {
-        html += `<div class="item${it.danger ? " danger" : ""}${i === this.#active ? " active" : ""}" role="${it.checked === undefined ? "menuitem" : "menuitemcheckbox"}"` +
+        html += `<div class="item${it.danger ? " danger" : ""}${i === this._active ? " active" : ""}" role="${it.checked === undefined ? "menuitem" : "menuitemcheckbox"}"` +
           ` tabindex="-1" data-i="${i}"${it.disabled ? ' aria-disabled="true"' : ""}${it.checked !== undefined ? ` aria-checked="${!!it.checked}"` : ""}>` +
           (it.checked !== undefined ? `<span class="check">${it.checked ? "✓" : ""}</span>` : "") +
           `<span>${esc(it.label)}</span>${it.shortcut ? `<span class="kbd">${esc(it.shortcut)}</span>` : ""}</div>`;
       }
     });
     list.innerHTML = html || `<div class="empty">No actions</div>`;
-    this.#popup.update();
+    this._popup.update();
   }
 
-  #enabled = (i: number) => {
-    const it = this.#items[i];
+  _enabled(i: number): boolean {
+    const it = this._items[i];
     return !!it && "label" in it && !it.disabled;
-  };
+  }
 
-  #open(from: "Home" | "End") {
-    this.#read();
-    this.#active = moveIndex(-1, this.#items.length, from, this.#enabled);
-    this.#popup.show();
-    this.#render();
+  _open(from: "Home" | "End") {
+    this._read();
+    this._active = moveIndex(-1, this._items.length, from, (i) => this._enabled(i));
+    this._popup.show();
+    this._render();
     (this.querySelector('[slot="trigger"]') as HTMLElement | null)?.setAttribute("aria-expanded", "true");
-    this.#focusActive();
+    this._focusActive();
   }
 
-  #toggle() {
-    this.#popup.open ? this.#popup.hide() : this.#open("Home");
+  _toggle() {
+    this._popup.open ? this._popup.hide() : this._open("Home");
   }
 
-  #setActive(i: number) {
-    if (i === this.#active) return;
-    this.#active = i;
-    for (const el of this.#root.querySelectorAll<HTMLElement>(".item")) el.classList.toggle("active", Number(el.dataset.i) === i);
-    this.#focusActive();
+  _setActive(i: number) {
+    if (i === this._active) return;
+    this._active = i;
+    for (const el of this._root.querySelectorAll<HTMLElement>(".item")) el.classList.toggle("active", Number(el.dataset.i) === i);
+    this._focusActive();
   }
 
-  #focusActive() {
-    this.#root.querySelector<HTMLElement>(`.item[data-i="${this.#active}"]`)?.focus();
+  _focusActive() {
+    this._root.querySelector<HTMLElement>(`.item[data-i="${this._active}"]`)?.focus();
   }
 
-  #choose(i: number) {
-    const it = this.#items[i];
+  _choose(i: number) {
+    const it = this._items[i];
     if (!it || !("label" in it) || it.disabled) return;
-    this.#popup.hide();
+    this._popup.hide();
     (this.querySelector('[slot="trigger"]') as HTMLElement | null)?.focus();
     emit(this, "select", { value: it.value, item: it });
   }
 
-  #key(e: KeyboardEvent) {
+  _key(e: KeyboardEvent) {
     if (["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
       e.preventDefault();
-      this.#setActive(moveIndex(this.#active, this.#items.length, e.key, this.#enabled));
+      this._setActive(moveIndex(this._active, this._items.length, e.key, (i) => this._enabled(i)));
     } else if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      this.#choose(this.#active);
+      this._choose(this._active);
     } else if (e.key === "Escape" || e.key === "Tab") {
       e.preventDefault();
-      this.#popup.hide();
+      this._popup.hide();
       (this.querySelector('[slot="trigger"]') as HTMLElement | null)?.focus();
     }
   }
 }
 
-/** Data-only children of `<sbx-menu>`. */
-class SbxMenuData extends ElementBase {
-  connectedCallback(): void {
-    this.hidden = true;
-  }
-}
 
-define("sbx-menu", SbxMenu);
-define("sbx-menu-item", class extends SbxMenuData {});
-define("sbx-menu-separator", class extends SbxMenuData {});
-define("sbx-menu-group", class extends SbxMenuData {});

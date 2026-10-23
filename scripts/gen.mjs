@@ -45,6 +45,12 @@ function visit(rel) {
     visit(target);
     return `${pre}${q}${key(target)}${q}`;
   });
+  // dynamic import("./x.ts") anywhere (lazy component code)
+  js = js.replace(/(\bimport\s*\(\s*)(["'])(\.[^"']+)\2/g, (m, pre, q, spec) => {
+    const target = relative(SRC, resolve(dirname(file), spec)).split("\\").join("/");
+    visit(target);
+    return `${pre}${q}${key(target)}${q}`;
+  });
   // collapse the whitespace left where types were
   js = js.split("\n").map((l) => l.replace(/\s+$/, "")).filter((l, i, a) => l !== "" || a[i - 1] !== "").join("\n");
   modules.set(rel, js);

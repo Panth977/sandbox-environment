@@ -36,7 +36,23 @@ try {
   out.themeMode = theme().mode;
   out.accentVar = getComputedStyle(document.documentElement).getPropertyValue("--sbx-accent").trim();
   onTheme((t) => host.report({ themeChanged: t.mode }));
+  const { lazyStats } = await import("@panth977/sandbox/ui");
   document.getElementById("root").innerHTML = '<button class="sbx-btn sbx-btn--primary">Hi</button><div style="height:300px"></div>';
+  out.lazyBefore = [...lazyStats.loaded];
+  // a component created and given data BEFORE its code exists, then rendered
+  const t = document.createElement("sbx-table");
+  t.rows = [{ a: 1 }, { a: 2 }];
+  document.getElementById("root").append(t);
+  for (let i = 0; i < 100 && !t.querySelector("tbody tr td"); i++) await new Promise((r) => setTimeout(r, 20));
+  out.lazyAfter = [...lazyStats.loaded];
+  out.rowsBeforeLoad = t.querySelectorAll("tbody tr").length;
+  // host component packs: plain (load on first tag) and kit-style (sync definition)
+  out.packBefore = !!globalThis.__packLoaded;
+  const xk = document.createElement("x-kit");
+  xk.name = "Asha";
+  document.getElementById("root").append(document.createElement("x-hello"), xk);
+  for (let i = 0; i < 100 && !(document.querySelector("x-hello")?.textContent && xk.textContent); i++) await new Promise((r) => setTimeout(r, 20));
+  out.packText = document.querySelector("x-hello").textContent + " | " + xk.textContent;
   toast("hello");
   console.log("artifact says", { a: 1 });
   expose({ getState: () => ({ ready: true, n: out.stream.length }) });
@@ -55,10 +71,15 @@ const artifact = {
   imports: {},
   manifest: { name: "e2e", network: [origin] },
 };
+const components = [
+  { tags: ["x-hello"], source: "globalThis.__packLoaded = true; customElements.define('x-hello', class extends HTMLElement { connectedCallback() { this.textContent = 'hello from pack'; } });" },
+  { elements: { "x-kit": { props: ["name"] } }, source: "export const elements = { 'x-kit': class extends HTMLElement { _init() {} _connected() { this.textContent = 'kit ' + this._n; } get name() { return this._n; } set name(v) { this._n = v; } } };" },
+];
 
 let tick = null;
 const handle = mount(document.getElementById("slot"), {
   artifact,
+  components,
   env: { orgId: "o7" },
   theme: { mode: "dark" },
   network: [origin],

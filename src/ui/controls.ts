@@ -47,25 +47,28 @@ button:focus-visible { outline: 2px solid var(--sbx-accent); outline-offset: -2p
 `;
 
 export class SbxTabs extends ElementBase {
-  static get observedAttributes(): string[] {
-    return ["value"];
+  _init(): void {
+    this._tabs = [];
+    this._fromChildren = true;
+    this._mo = null;
+    this._id = uid("tabs");
   }
-  #root!: ShadowRoot;
-  #tabs: TabDef[] = [];
-  #fromChildren = true;
-  #mo: MutationObserver | null = null;
-  #id = uid("tabs");
+  declare _root: ShadowRoot;
+  declare _tabs: TabDef[];
+  declare _fromChildren: boolean;
+  declare _mo: MutationObserver | null;
+  declare _id: string;
 
-  connectedCallback(): void {
-    if (!this.#root) {
-      this.#root = shadow(this, TABS_CSS, `<div class="bar" role="tablist" part="tablist"></div><div class="panels" part="panels"><slot></slot></div>`);
-      const bar = this.#root.querySelector<HTMLElement>(".bar")!;
+  _connected(): void {
+    if (!this._root) {
+      this._root = shadow(this, TABS_CSS, `<div class="bar" role="tablist" part="tablist"></div><div class="panels" part="panels"><slot></slot></div>`);
+      const bar = this._root.querySelector<HTMLElement>(".bar")!;
       bar.addEventListener("click", (e) => {
         const b = (e.target as Element).closest<HTMLButtonElement>("button");
-        if (b && b.getAttribute("aria-disabled") !== "true") this.#select(b.dataset.value!, true);
+        if (b && b.getAttribute("aria-disabled") !== "true") this._select(b.dataset.value!, true);
       });
       bar.addEventListener("keydown", (e) => {
-        const enabled = this.#tabs.filter((t) => !t.disabled);
+        const enabled = this._tabs.filter((t) => !t.disabled);
         const i = enabled.findIndex((t) => t.value === this.value);
         let j = -1;
         if (e.key === "ArrowRight") j = (i + 1) % enabled.length;
@@ -74,43 +77,43 @@ export class SbxTabs extends ElementBase {
         else if (e.key === "End") j = enabled.length - 1;
         if (j >= 0) {
           e.preventDefault();
-          this.#select(enabled[j].value, true);
-          this.#root.querySelector<HTMLElement>(`button[data-value="${CSS.escape(enabled[j].value)}"]`)?.focus();
+          this._select(enabled[j].value, true);
+          this._root.querySelector<HTMLElement>(`button[data-value="${CSS.escape(enabled[j].value)}"]`)?.focus();
         }
       });
-      new ResizeObserver(() => this.#ink()).observe(bar);
+      new ResizeObserver(() => this._ink()).observe(bar);
     }
-    this.#mo = new MutationObserver(() => this.#fromChildren && this.#read());
-    this.#mo.observe(this, { childList: true, subtree: true, characterData: true, attributeFilter: ["value", "count", "disabled"] });
-    this.#read();
+    this._mo = new MutationObserver(() => this._fromChildren && this._read());
+    this._mo.observe(this, { childList: true, subtree: true, characterData: true, attributeFilter: ["value", "count", "disabled"] });
+    this._read();
   }
 
-  disconnectedCallback(): void {
-    this.#mo?.disconnect();
+  _disconnected(): void {
+    this._mo?.disconnect();
   }
 
-  attributeChangedCallback(): void {
-    if (this.#root) this.#render();
+  _attributeChanged(): void {
+    if (this._root) this._render();
   }
 
   get tabs(): TabDef[] {
-    return this.#tabs;
+    return this._tabs;
   }
   set tabs(v: TabDef[]) {
-    this.#fromChildren = false;
-    this.#tabs = Array.isArray(v) ? v : [];
-    this.#render();
+    this._fromChildren = false;
+    this._tabs = Array.isArray(v) ? v : [];
+    this._render();
   }
 
   get value(): string {
-    return this.getAttribute("value") ?? this.#tabs.find((t) => !t.disabled)?.value ?? "";
+    return this.getAttribute("value") ?? this._tabs.find((t) => !t.disabled)?.value ?? "";
   }
   set value(v: string) {
     this.setAttribute("value", v);
   }
 
-  #read() {
-    if (!this.#fromChildren) return;
+  _read() {
+    if (!this._fromChildren) return;
     const tabs: TabDef[] = [];
     for (const c of Array.from(this.children)) {
       if (c.tagName.toLowerCase() !== "sbx-tab") continue;
@@ -122,33 +125,33 @@ export class SbxTabs extends ElementBase {
         disabled: c.hasAttribute("disabled"),
       });
     }
-    this.#tabs = tabs;
-    this.#render();
+    this._tabs = tabs;
+    this._render();
   }
 
-  #select(v: string, user: boolean) {
+  _select(v: string, user: boolean) {
     if (v === this.value) return;
     this.setAttribute("value", v);
     if (user) emit(this, "change", { value: v });
   }
 
-  #render() {
-    if (!this.#root) return;
+  _render() {
+    if (!this._root) return;
     const cur = this.value;
-    this.#root.querySelector(".bar")!.innerHTML = this.#tabs.map((t) =>
-      `<button role="tab" part="tab" id="${this.#id}-${esc(t.value)}" data-value="${esc(t.value)}" aria-selected="${t.value === cur}" tabindex="${t.value === cur ? 0 : -1}"` +
+    this._root.querySelector(".bar")!.innerHTML = this._tabs.map((t) =>
+      `<button role="tab" part="tab" id="${this._id}-${esc(t.value)}" data-value="${esc(t.value)}" aria-selected="${t.value === cur}" tabindex="${t.value === cur ? 0 : -1}"` +
       `${t.disabled ? ' aria-disabled="true"' : ""}>${esc(t.label)}${t.count != null && t.count !== "" ? `<span class="count">${esc(t.count)}</span>` : ""}</button>`
     ).join("") + `<span class="ink" part="indicator"></span>`;
     for (const panel of Array.from(this.querySelectorAll<HTMLElement>(":scope > [data-tab]"))) {
       panel.hidden = panel.dataset.tab !== cur;
       panel.setAttribute("role", "tabpanel");
     }
-    requestAnimationFrame(() => this.#ink());
+    requestAnimationFrame(() => this._ink());
   }
 
-  #ink() {
-    const ink = this.#root?.querySelector<HTMLElement>(".ink");
-    const b = this.#root?.querySelector<HTMLElement>('button[aria-selected="true"]');
+  _ink() {
+    const ink = this._root?.querySelector<HTMLElement>(".ink");
+    const b = this._root?.querySelector<HTMLElement>('button[aria-selected="true"]');
     if (!ink) return;
     if (!b) {
       ink.style.width = "0";
@@ -159,8 +162,6 @@ export class SbxTabs extends ElementBase {
   }
 }
 
-define("sbx-tabs", SbxTabs);
-define("sbx-tab", class extends ElementBase {});
 
 // ---- switch --------------------------------------------------------------
 
@@ -175,38 +176,30 @@ const SWITCH_CSS = `
 `;
 
 export class SbxSwitch extends ElementBase {
-  static formAssociated = true;
-  static get observedAttributes(): string[] {
-    return ["checked", "disabled"];
+  _init(): void {
   }
-  #internals: ElementInternals | null = null;
-  #root!: ShadowRoot;
+  declare _internals: ElementInternals | null;
+  declare _root: ShadowRoot;
 
-  constructor() {
-    super();
-    try {
-      this.#internals = this.attachInternals();
-    } catch { /* older browser */ }
-  }
 
-  connectedCallback(): void {
-    if (!this.#root) {
-      this.#root = shadow(this, SWITCH_CSS, `<span class="track" part="track"><span class="thumb" part="thumb"></span></span><slot></slot>`);
-      this.addEventListener("click", () => this.#toggle());
+  _connected(): void {
+    if (!this._root) {
+      this._root = shadow(this, SWITCH_CSS, `<span class="track" part="track"><span class="thumb" part="thumb"></span></span><slot></slot>`);
+      this.addEventListener("click", () => this._toggle());
       this.addEventListener("keydown", (e) => {
         if (e.key === " " || e.key === "Enter") {
           e.preventDefault();
-          this.#toggle();
+          this._toggle();
         }
       });
     }
     this.setAttribute("role", "switch");
     if (!this.hasAttribute("tabindex")) this.tabIndex = 0;
-    this.#sync();
+    this._sync();
   }
 
-  attributeChangedCallback(): void {
-    this.#sync();
+  _attributeChanged(): void {
+    this._sync();
   }
 
   get checked(): boolean {
@@ -225,25 +218,24 @@ export class SbxSwitch extends ElementBase {
     return this.getAttribute("value") ?? "on";
   }
 
-  #toggle() {
+  _toggle() {
     if (this.disabled) return;
     this.checked = !this.checked;
     emit(this, "input", { checked: this.checked });
     emit(this, "change", { checked: this.checked });
   }
 
-  #sync() {
+  _sync() {
     this.setAttribute("aria-checked", String(this.checked));
     this.setAttribute("aria-disabled", String(this.disabled));
-    this.#internals?.setFormValue(this.checked ? this.value : null);
+    this._internals?.setFormValue(this.checked ? this.value : null);
   }
 
-  formResetCallback(): void {
+  _formReset(): void {
     this.checked = this.hasAttribute("default-checked");
   }
 }
 
-define("sbx-switch", SbxSwitch);
 
 // ---- tooltip -------------------------------------------------------------
 
@@ -254,26 +246,30 @@ const TIP_CSS = `
 `;
 
 export class SbxTooltip extends ElementBase {
-  #root!: ShadowRoot;
-  #popup!: Popup;
-  #timer: ReturnType<typeof setTimeout> | null = null;
-  #id = uid("tip");
+  _init(): void {
+    this._timer = null;
+    this._id = uid("tip");
+  }
+  declare _root: ShadowRoot;
+  declare _popup: Popup;
+  declare _timer: ReturnType<typeof setTimeout> | null;
+  declare _id: string;
 
-  connectedCallback(): void {
-    if (this.#root) return;
-    this.#root = shadow(this, TIP_CSS, `<slot></slot><div class="tip" role="tooltip" id="${this.#id}" part="tooltip"></div>`);
-    const tip = this.#root.querySelector<HTMLElement>(".tip")!;
-    this.#popup = new Popup(tip, this, { placement: (this.getAttribute("placement") as Placement) ?? "top" });
+  _connected(): void {
+    if (this._root) return;
+    this._root = shadow(this, TIP_CSS, `<slot></slot><div class="tip" role="tooltip" id="${this._id}" part="tooltip"></div>`);
+    const tip = this._root.querySelector<HTMLElement>(".tip")!;
+    this._popup = new Popup(tip, this, { placement: (this.getAttribute("placement") as Placement) ?? "top" });
     tip.classList.add("tip");
     const show = () => {
       const text = this.getAttribute("text");
       if (!text) return;
       tip.textContent = text;
-      this.#timer = setTimeout(() => this.#popup.show(), Number(this.getAttribute("delay") ?? 350));
+      this._timer = setTimeout(() => this._popup.show(), Number(this.getAttribute("delay") ?? 350));
     };
     const hide = () => {
-      if (this.#timer) clearTimeout(this.#timer);
-      this.#popup.hide();
+      if (this._timer) clearTimeout(this._timer);
+      this._popup.hide();
     };
     this.addEventListener("pointerenter", show);
     this.addEventListener("pointerleave", hide);
@@ -286,4 +282,3 @@ export class SbxTooltip extends ElementBase {
   }
 }
 
-define("sbx-tooltip", SbxTooltip);

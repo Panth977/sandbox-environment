@@ -70,130 +70,138 @@ function asTime(v: unknown): number | null {
 }
 
 export class SbxChart extends ElementBase {
-  static get observedAttributes(): string[] {
-    return ["type", "height", "stacked", "no-legend", "unit", "x", "y"];
+  _init(): void {
+    this._data = [];
+    this._type = "line";
+    this._x = "x";
+    this._y = ["y"];
+    this._labels = {};
+    this._hidden = new Set<string>();
+    this._width = 0;
+    this._raf = 0;
+    this._name = (k: string) => this._labels[k] ?? k;
   }
-  #root!: ShadowRoot;
-  #data: Row[] = [];
-  #type: ChartType = "line";
-  #x = "x";
-  #y: string[] = ["y"];
-  #labels: Record<string, string> = {};
-  #hidden = new Set<string>();
-  #width = 0;
-  #raf = 0;
+  declare _root: ShadowRoot;
+  declare _data: Row[];
+  declare _type: ChartType;
+  declare _x: string;
+  declare _y: string[];
+  declare _labels: Record<string, string>;
+  declare _hidden: Set<any>;
+  declare _width: number;
+  declare _raf: number;
 
-  connectedCallback(): void {
-    if (!this.#root) {
-      this.#root = shadow(this, CSS, `<div class="plot" part="plot"></div><div class="legend" part="legend"></div><div class="tip" part="tooltip"></div>`);
+  _connected(): void {
+    if (!this._root) {
+      this._root = shadow(this, CSS, `<div class="plot" part="plot"></div><div class="legend" part="legend"></div><div class="tip" part="tooltip"></div>`);
       new ResizeObserver((e) => {
         const w = Math.floor(e[0].contentRect.width);
-        if (w !== this.#width) {
-          this.#width = w;
-          this.#schedule();
+        if (w !== this._width) {
+          this._width = w;
+          this._schedule();
         }
       }).observe(this);
-      this.#root.querySelector(".legend")!.addEventListener("click", (e) => {
+      this._root.querySelector(".legend")!.addEventListener("click", (e) => {
         const b = (e.target as Element).closest<HTMLElement>("button");
         if (!b) return;
         const k = b.dataset.key!;
-        this.#hidden.has(k) ? this.#hidden.delete(k) : this.#hidden.add(k);
-        this.#schedule();
+        this._hidden.has(k) ? this._hidden.delete(k) : this._hidden.add(k);
+        this._schedule();
       });
     }
-    this.#schedule();
+    this._schedule();
   }
 
-  attributeChangedCallback(name: string, _o: string | null, v: string | null): void {
-    if (name === "type" && v) this.#type = v as ChartType;
-    if (name === "x" && v) this.#x = v;
-    if (name === "y" && v) this.#y = v.split(",").map((s) => s.trim()).filter(Boolean);
-    this.#schedule();
+  _attributeChanged(name: string, _o: string | null, v: string | null): void {
+    if (name === "type" && v) this._type = v as ChartType;
+    if (name === "x" && v) this._x = v;
+    if (name === "y" && v) this._y = v.split(",").map((s) => s.trim()).filter(Boolean);
+    this._schedule();
   }
 
   get type(): ChartType {
-    return this.#type;
+    return this._type;
   }
   set type(v: ChartType) {
-    this.#type = v;
-    this.#schedule();
+    this._type = v;
+    this._schedule();
   }
   get data(): Row[] {
-    return this.#data;
+    return this._data;
   }
   set data(v: Row[]) {
-    this.#data = Array.isArray(v) ? v : [];
-    this.#schedule();
+    this._data = Array.isArray(v) ? v : [];
+    this._schedule();
   }
   get x(): string {
-    return this.#x;
+    return this._x;
   }
   set x(v: string) {
-    this.#x = v;
-    this.#schedule();
+    this._x = v;
+    this._schedule();
   }
   get y(): string | string[] {
-    return this.#y.length === 1 ? this.#y[0] : this.#y;
+    return this._y.length === 1 ? this._y[0] : this._y;
   }
   set y(v: string | string[]) {
-    this.#y = Array.isArray(v) ? v : [v];
-    this.#schedule();
+    this._y = Array.isArray(v) ? v : [v];
+    this._schedule();
   }
   get labels(): Record<string, string> {
-    return this.#labels;
+    return this._labels;
   }
   set labels(v: Record<string, string>) {
-    this.#labels = v ?? {};
-    this.#schedule();
+    this._labels = v ?? {};
+    this._schedule();
   }
 
-  #schedule() {
-    if (this.#raf || !this.#root) return;
-    this.#raf = requestAnimationFrame(() => {
-      this.#raf = 0;
-      this.#render();
+  _schedule() {
+    if (this._raf || !this._root) return;
+    this._raf = requestAnimationFrame(() => {
+      this._raf = 0;
+      this._render();
     });
   }
 
-  #name = (k: string) => this.#labels[k] ?? k;
+  declare _name: any;
 
-  #render() {
+  _render(): void {
     const H = Number(this.getAttribute("height") ?? 240);
-    const W = this.#width || this.clientWidth || 480;
-    const plot = this.#root.querySelector<HTMLElement>(".plot")!;
-    const legend = this.#root.querySelector<HTMLElement>(".legend")!;
-    const tip = this.#root.querySelector<HTMLElement>(".tip")!;
+    const W = this._width || this.clientWidth || 480;
+    const plot = this._root.querySelector<HTMLElement>(".plot")!;
+    const legend = this._root.querySelector<HTMLElement>(".legend")!;
+    const tip = this._root.querySelector<HTMLElement>(".tip")!;
     tip.style.display = "none";
     const unit = this.getAttribute("unit") ?? "";
-    if (!this.#data.length) {
+    if (!this._data.length) {
       plot.innerHTML = `<div class="empty" style="height:${H}px">No data</div>`;
       legend.innerHTML = "";
       return;
     }
-    const keys = this.#y;
-    const pie = this.#type === "pie" || this.#type === "donut";
+    const keys = this._y;
+    const pie = this._type === "pie" || this._type === "donut";
     // legend
-    const legendItems = pie ? this.#data.map((r) => String(r[this.#x])) : keys;
+    const legendItems = pie ? this._data.map((r) => String(r[this._x])) : keys;
     legend.style.display = this.hasAttribute("no-legend") || (!pie && keys.length < 2) ? "none" : "";
     legend.innerHTML = legendItems.map((k, i) =>
-      `<button data-key="${esc(k)}" aria-pressed="${!this.#hidden.has(k)}"><span class="sw" style="background:${color(i)}"></span>${esc(pie ? k : this.#name(k))}</button>`
+      `<button data-key="${esc(k)}" aria-pressed="${!this._hidden.has(k)}"><span class="sw" style="background:${color(i)}"></span>${esc(pie ? k : this._name(k))}</button>`
     ).join("");
-    if (pie) return this.#pie(plot, tip, W, H, unit);
+    if (pie) return this._pie(plot, tip, W, H, unit);
 
-    const visible = keys.filter((k) => !this.#hidden.has(k));
-    const xs = this.#data.map((r) => r[this.#x]);
+    const visible = keys.filter((k) => !this._hidden.has(k));
+    const xs = this._data.map((r) => r[this._x]);
     const times = xs.map(asTime);
-    const linear = this.#type !== "bar" && xs.every((v, i) => typeof v === "number" || times[i] !== null);
+    const linear = this._type !== "bar" && xs.every((v, i) => typeof v === "number" || times[i] !== null);
     const xNum = xs.map((v, i) => (typeof v === "number" ? v : times[i] ?? i));
     const isTime = linear && times.every((t) => t !== null);
-    const stacked = this.hasAttribute("stacked") && (this.#type === "bar" || this.#type === "area");
+    const stacked = this.hasAttribute("stacked") && (this._type === "bar" || this._type === "area");
     const val = (r: Row, k: string) => {
       const n = Number(r[k]);
       return Number.isFinite(n) ? n : 0;
     };
     let lo = 0;
     let hi = 0;
-    for (const r of this.#data) {
+    for (const r of this._data) {
       if (stacked) {
         let s = 0;
         for (const k of visible) s += val(r, k);
@@ -215,7 +223,7 @@ export class SbxChart extends ElementBase {
     const iw = Math.max(10, W - padL - padR);
     const ih = Math.max(10, H - padT - padB);
     const yPos = (v: number) => padT + ih - ((v - yMin) / (yMax - yMin || 1)) * ih;
-    const n = this.#data.length;
+    const n = this._data.length;
     const xMin = Math.min(...xNum);
     const xMax = Math.max(...xNum);
     const band = iw / n;
@@ -229,7 +237,7 @@ export class SbxChart extends ElementBase {
       return typeof v === "number" ? fmt(v) : String(v ?? "");
     };
 
-    let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(this.getAttribute("aria-label") ?? `${this.#type} chart`)}">`;
+    let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(this.getAttribute("aria-label") ?? `${this._type} chart`)}">`;
     svg += `<g class="axis">`;
     for (const t of ticks) {
       const y = yPos(t);
@@ -240,10 +248,10 @@ export class SbxChart extends ElementBase {
     for (let i = 0; i < n; i += every) svg += `<text x="${xPos(i)}" y="${H - 6}" text-anchor="middle">${esc(xLabel(i))}</text>`;
     svg += `<line class="base" x1="${padL}" x2="${W - padR}" y1="${yPos(Math.max(0, yMin))}" y2="${yPos(Math.max(0, yMin))}"/></g>`;
 
-    if (this.#type === "bar") {
+    if (this._type === "bar") {
       const groupW = band * 0.72;
       const bw = stacked ? groupW : groupW / Math.max(1, visible.length);
-      this.#data.forEach((r, i) => {
+      this._data.forEach((r, i) => {
         let acc = 0;
         visible.forEach((k, j) => {
           const v = val(r, k);
@@ -261,20 +269,20 @@ export class SbxChart extends ElementBase {
       const base = new Array(n).fill(0);
       visible.forEach((k) => {
         const ci = keys.indexOf(k);
-        const pts = this.#data.map((r, i) => {
+        const pts = this._data.map((r, i) => {
           const v = val(r, k) + (stacked ? base[i] : 0);
           return [xPos(i), yPos(v)] as const;
         });
         const d = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join("");
-        if (this.#type === "area") {
+        if (this._type === "area") {
           const floor = stacked
-            ? this.#data.map((_, i) => [xPos(i), yPos(base[i])] as const).reverse()
+            ? this._data.map((_, i) => [xPos(i), yPos(base[i])] as const).reverse()
             : [[xPos(n - 1), yPos(Math.max(0, yMin))] as const, [xPos(0), yPos(Math.max(0, yMin))] as const];
           svg += `<path d="${d}${floor.map(([x, y]) => `L${x.toFixed(1)},${y.toFixed(1)}`).join("")}Z" fill="${color(ci)}" fill-opacity=".18"/>`;
         }
         svg += `<path d="${d}" fill="none" stroke="${color(ci)}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
         if (n <= 40) for (const [x, y] of pts) svg += `<circle cx="${x}" cy="${y}" r="2.5" fill="${color(ci)}"/>`;
-        if (stacked) this.#data.forEach((r, i) => (base[i] += val(r, k)));
+        if (stacked) this._data.forEach((r, i) => (base[i] += val(r, k)));
       });
     }
     svg += `<line class="cross" x1="0" x2="0" y1="${padT}" y2="${padT + ih}" stroke="var(--sbx-line-strong)" stroke-dasharray="3 3" visibility="hidden"/>`;
@@ -303,7 +311,7 @@ export class SbxChart extends ElementBase {
       cross.setAttribute("x2", String(x));
       cross.setAttribute("visibility", "visible");
       tip.innerHTML = `<b>${esc(xLabel(i))}</b>` + visible.map((k) =>
-        `<div><span class="sw" style="background:${color(keys.indexOf(k))}"></span>${esc(this.#name(k))}: ${esc(fmt(val(this.#data[i], k), unit))}</div>`
+        `<div><span class="sw" style="background:${color(keys.indexOf(k))}"></span>${esc(this._name(k))}: ${esc(fmt(val(this._data[i], k), unit))}</div>`
       ).join("");
       tip.style.display = "block";
       const tw = tip.offsetWidth;
@@ -317,19 +325,19 @@ export class SbxChart extends ElementBase {
     hit.addEventListener("click", (e) => {
       const rect = plot.getBoundingClientRect();
       const i = nearest(e.clientX - rect.left);
-      emit(this, "pointclick", { index: i, row: this.#data[i] });
+      emit(this, "pointclick", { index: i, row: this._data[i] });
     });
   }
 
-  #pie(plot: HTMLElement, tip: HTMLElement, W: number, H: number, unit: string) {
-    const k = this.#y[0];
-    const items = this.#data.map((r, i) => ({ label: String(r[this.#x]), v: Math.max(0, Number(r[k]) || 0), i, row: r }))
-      .filter((s) => !this.#hidden.has(s.label));
+  _pie(plot: HTMLElement, tip: HTMLElement, W: number, H: number, unit: string) {
+    const k = this._y[0];
+    const items = this._data.map((r, i) => ({ label: String(r[this._x]), v: Math.max(0, Number(r[k]) || 0), i, row: r }))
+      .filter((s) => !this._hidden.has(s.label));
     const total = items.reduce((a, s) => a + s.v, 0) || 1;
     const R = Math.min(H, W) / 2 - 6;
     const cx = W / 2;
     const cy = H / 2;
-    const inner = this.#type === "donut" ? R * 0.6 : 0;
+    const inner = this._type === "donut" ? R * 0.6 : 0;
     let a0 = -Math.PI / 2;
     let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(this.getAttribute("aria-label") ?? "pie chart")}">`;
     for (const s of items) {
@@ -365,10 +373,9 @@ export class SbxChart extends ElementBase {
       const path = (e.target as Element).closest("path");
       if (path) {
         const i = Number(path.getAttribute("data-i"));
-        emit(this, "pointclick", { index: i, row: this.#data[i] });
+        emit(this, "pointclick", { index: i, row: this._data[i] });
       }
     });
   }
 }
 
-define("sbx-chart", SbxChart);

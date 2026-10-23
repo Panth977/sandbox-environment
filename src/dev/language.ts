@@ -10,6 +10,7 @@ import { createEndpoint } from "../bridge.ts";
 import { TYPE_ENTRIES, TYPE_SOURCES } from "../generated/type_sources.ts";
 import { scanSpecifiers } from "../compiler/lexer.ts";
 import { splitBare } from "../compiler/compile.ts";
+import { SVELTE_RUNE_TYPES, svelteToVirtual } from "./svelte.ts";
 
 /* deno-lint-ignore-file no-explicit-any */
 type TS = any;
@@ -121,6 +122,7 @@ export function createLanguageService(): LanguageService {
     for (const [rel, text] of Object.entries(TYPE_SOURCES)) libs.set(`/node_modules/@panth977/sandbox/src/${rel}`, text);
     libs.set("/types/sbx-ui.d.ts", UI_ELEMENT_TYPES);
     libs.set("/types/sbx-assets.d.ts", ASSET_TYPES);
+    libs.set("/types/sbx-svelte.d.ts", SVELTE_RUNE_TYPES);
     if (!libs.has("/types/host.d.ts")) libs.set("/types/host.d.ts", "export {};\n");
   }
 
@@ -153,7 +155,7 @@ export function createLanguageService(): LanguageService {
   function makeService() {
     const host = {
       getProjectVersion: () => String(projectVersion),
-      getScriptFileNames: () => [...files.keys(), "/types/sbx-ui.d.ts", "/types/sbx-assets.d.ts", "/types/host.d.ts"],
+      getScriptFileNames: () => [...files.keys(), "/types/sbx-ui.d.ts", "/types/sbx-assets.d.ts", "/types/sbx-svelte.d.ts", "/types/host.d.ts"],
       getScriptVersion: (f: string) => String(files.get(f)?.version ?? 0),
       getScriptSnapshot: (f: string) => {
         const t = files.get(f)?.text ?? libs.get(f);
@@ -309,6 +311,25 @@ export function createLanguageService(): LanguageService {
   }
 
   const isTsLike = (p: string) => /\.(tsx?|jsx?|mjs)$/.test(p);
+  // .svelte files are checked as a same-length virtual TS file (./svelte.ts): offsets map 1:1.
+  const isSvelte = (p: string) => p.endsWith(".svelte");
+  const VIRTUAL = ".__sbx.ts";
+  const svelteMeta = new Map<string, { ts: boolean; scripts: [number, number][] }>();
+  /** The language-service path for an editor path. */
+  const lsPath = (p: string) => (isSvelte(p) ? p + VIRTUAL : p);
+  function put(path: string, text: string) {
+    if (isSvelte(path)) {
+      const v = svelteToVirtual(text);
+      svelteMeta.set(path, { ts: v.ts, scripts: v.scripts });
+      const cur = files.get(path + VIRTUAL);
+      files.set(path + VIRTUAL, { text: v.code, version: (cur?.version ?? 0) + 1 });
+      return v.code;
+    }
+    const cur = files.get(path);
+    files.set(path, { text, version: (cur?.version ?? 0) + 1 });
+    return text;
+  }
+  const handled = (p: string) => isTsLike(p) || isSvelte(p) || p.endsWith(".json");
 
   return {
     async init(o) {
@@ -324,16 +345,17 @@ export function createLanguageService(): LanguageService {
     async setFiles(next, dependencies = {}) {
       deps = dependencies;
       files.clear();
-      for (const [p, text] of Object.entries(next)) if (isTsLike(p) || p.endsWith(".json")) files.set(p, { text, version: 1 });
+      svelteMeta.clear();
+      const code: [string, string][] = [];
+      for (const [p, text] of Object.entries(next)) if (handled(p)) code.push([p, put(p, text)]);
       projectVersion++;
-      await Promise.all([...files.entries()].filter(([p]) => isTsLike(p)).map(([p, f]) => acquireFor(f.text, /\.(tsx|jsx)$/.test(p))));
+      await Promise.all(code.filter(([p]) => !p.endsWith(".json")).map(([p, t]) => acquireFor(t, /\.(tsx|jsx)$/.test(p))));
     },
     async setFile(path, text) {
-      if (!isTsLike(path) && !path.endsWith(".json")) return;
-      const cur = files.get(path);
-      files.set(path, { text, version: (cur?.version ?? 0) + 1 });
+      if (!handled(path)) return;
+      const code = put(path, text);
       projectVersion++;
-      if (isTsLike(path)) await acquireFor(text, /\.(tsx|jsx)$/.test(path));
+      if (!path.endsWith(".json")) await acquireFor(code, /\.(tsx|jsx)$/.test(path));
     },
     async setHostTypes(dts) {
       // must be a module so `declare module "@panth977/sandbox/artifact"` augments instead of replacing
@@ -342,16 +364,26 @@ export function createLanguageService(): LanguageService {
       projectVersion++;
     },
     async diagnostics(path) {
-      if (!service || !files.has(path) || !isTsLike(path)) return [];
+      if (!service || !files.has(lsPath(path))) return [];
+      if (isSvelte(path)) {
+        // Only what is said about the <script> blocks: template expressions lack each-block
+        // variables and the like, and the Svelte compiler reports the template itself.
+        const meta = svelteMeta.get(path)!;
+        const v = lsPath(path);
+        const ds = [...service.getSyntacticDiagnostics(v), ...(meta.ts ? service.getSemanticDiagnostics(v) : [])];
+        return ds.filter((d: any) => meta.scripts.some(([a, b]) => (d.start ?? -1) >= a && (d.start ?? -1) < b)).map(toDiag);
+      }
+      if (!isTsLike(path)) return [];
       const syn = service.getSyntacticDiagnostics(path);
       const sem = /\.(tsx?)$/.test(path) ? service.getSemanticDiagnostics(path) : [];
       return [...syn, ...sem].map(toDiag);
     },
     async completions(path, pos) {
-      if (!service || !files.has(path)) return null;
-      const r = service.getCompletionsAtPosition(path, pos, { includeCompletionsWithInsertText: true });
+      const p = lsPath(path);
+      if (!service || !files.has(p)) return null;
+      const r = service.getCompletionsAtPosition(p, pos, { includeCompletionsWithInsertText: true });
       if (!r) return null;
-      const text = files.get(path)!.text;
+      const text = files.get(p)!.text;
       let from = pos;
       while (from > 0 && /[\w$]/.test(text[from - 1])) from--;
       const items = r.entries
@@ -362,8 +394,9 @@ export function createLanguageService(): LanguageService {
       return { from, items };
     },
     async quickInfo(path, pos) {
-      if (!service || !files.has(path)) return null;
-      const q = service.getQuickInfoAtPosition(path, pos);
+      const p = lsPath(path);
+      if (!service || !files.has(p)) return null;
+      const q = service.getQuickInfoAtPosition(p, pos);
       if (!q) return null;
       const sig = ts.displayPartsToString(q.displayParts);
       const doc = ts.displayPartsToString(q.documentation ?? []);

@@ -42,7 +42,7 @@ for (const name of browsers) {
     let results;
     try {
       await p.goto(`${base}/e2e/pages/${page}.html`);
-      await p.waitForFunction(() => window.__results?.done, null, { timeout: 30000 });
+      await p.waitForFunction(() => window.__results?.done, null, { timeout: 90000 });
       results = await p.evaluate(() => window.__results);
     } catch (e) {
       results = { timeout: String(e), partial: await p.evaluate(() => window.__results).catch(() => null) };

@@ -136,8 +136,10 @@ import { mountDev } from "@panth977/sandbox/dev";
 mountDev(document.getElementById("ide")!, { files, api, hostTypes, onSave: (files) => save(files) });
 ```
 
-Left: files and a typed editor (TypeScript diagnostics, completions and hover from
-your `hostTypes`, the UI kit and npm types fetched on demand). Right: the same
+Left: a file explorer (folders; create, rename, drag to move, delete) and a typed editor
+with tabs, find/replace and a status bar. TypeScript diagnostics, completions and hover come
+from your `hostTypes`, the UI kit and npm types fetched on demand — in `.ts/.tsx/.js` files and
+in `.svelte` files (script blocks and template expressions, runes and `$store` reads typed). Right: the same
 sandbox viewers get. Bottom: problems and console.
 
 ## The UI kit
@@ -157,8 +159,26 @@ Importing `@panth977/sandbox/ui` (the runtime does it for artifacts) installs:
   `<sbx-tooltip>`, `<sbx-table>` (sort, select, loading/empty), `<sbx-chart>` (line, area, bar,
   stacked, pie, donut), `toast()`.
 
-Hosts can provide their *own* components too: compile them to custom elements and pass
-them as `components: [{ url | source, css }]`.
+**Lazy by default.** The definitions (tag, properties, attributes, methods, form association)
+are registered synchronously and are tiny; each component's code is its own module, loaded the
+first time that tag is rendered. Properties set and methods called before that are kept and
+replayed, so `table.rows = data` or React's `rows={data}` work from the first render
+(`lazyStats.loaded` lists what has loaded).
+
+Hosts can provide their *own* components too, also lazily:
+
+```ts
+mount(el, {
+  artifact, api,
+  components: [
+    // a plain pack: imported the first time <oz-map> appears
+    { url: "https://cdn.example.com/oz-map.js", tags: ["oz-map"] },
+    // a kit-style pack: definitions now, code on first render
+    // (the module exports `elements: { "oz-line-chart": Impl }`, written like ui/lazy.ts describes)
+    { url: "https://cdn.example.com/oz-charts.js", elements: { "oz-line-chart": { props: ["series"], attrs: ["height"] } } },
+  ],
+});
+```
 
 ## Security model
 

@@ -36,22 +36,22 @@ footer { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 16px;
 `;
 
 export class SbxDialog extends ElementBase {
-  static get observedAttributes(): string[] {
-    return ["open", "heading"];
+  _init(): void {
+    this.returnValue = "";
   }
-  #root!: ShadowRoot;
-  returnValue = "";
+  declare _root: ShadowRoot;
+  declare returnValue: string;
 
-  connectedCallback(): void {
-    if (this.#root) return;
-    this.#root = shadow(this, DIALOG_CSS, `
+  _connected(): void {
+    if (this._root) return;
+    this._root = shadow(this, DIALOG_CSS, `
       <dialog part="dialog" aria-labelledby="h">
         <header part="header"><h2 id="h"></h2><button class="x" part="close" aria-label="Close">✕</button></header>
         <div class="body" part="body"><slot></slot></div>
         <footer part="footer"><slot name="footer"></slot></footer>
       </dialog>`);
-    const dlg = this.#dialog;
-    this.#root.querySelector(".x")!.addEventListener("click", () => this.close("dismiss"));
+    const dlg = this._dialog;
+    this._root.querySelector(".x")!.addEventListener("click", () => this.close("dismiss"));
     dlg.addEventListener("cancel", (e) => {
       e.preventDefault();
       if (this.dismissable) this.close("dismiss");
@@ -67,29 +67,29 @@ export class SbxDialog extends ElementBase {
       const btn = (e.target as Element).closest("[data-close]");
       if (btn && this.contains(btn)) this.close(btn.getAttribute("data-close") ?? "");
     });
-    const footer = this.#root.querySelector<HTMLSlotElement>('slot[name="footer"]')!;
-    const syncFooter = () => this.#root.querySelector("dialog")!.classList.toggle("nofooter", footer.assignedElements().length === 0);
+    const footer = this._root.querySelector<HTMLSlotElement>('slot[name="footer"]')!;
+    const syncFooter = () => this._root.querySelector("dialog")!.classList.toggle("nofooter", footer.assignedElements().length === 0);
     footer.addEventListener("slotchange", syncFooter);
     syncFooter();
-    this.#syncHeading();
+    this._syncHeading();
     if (this.hasAttribute("open")) this.show();
   }
 
-  attributeChangedCallback(name: string): void {
-    if (!this.#root) return;
-    if (name === "heading") this.#syncHeading();
+  _attributeChanged(name: string): void {
+    if (!this._root) return;
+    if (name === "heading") this._syncHeading();
     if (name === "open") this.hasAttribute("open") ? this.show() : this.close();
   }
 
-  get #dialog(): HTMLDialogElement {
-    return this.#root.querySelector("dialog")!;
+  get _dialog(): HTMLDialogElement {
+    return this._root.querySelector("dialog")!;
   }
 
-  #syncHeading() {
-    const h = this.#root.querySelector("h2")!;
+  _syncHeading() {
+    const h = this._root.querySelector("h2")!;
     h.textContent = this.getAttribute("heading") ?? "";
     (h.parentElement as HTMLElement).style.display = h.textContent || !this.hasAttribute("noclose") ? "" : "none";
-    (this.#root.querySelector(".x") as HTMLElement).hidden = this.hasAttribute("noclose");
+    (this._root.querySelector(".x") as HTMLElement).hidden = this.hasAttribute("noclose");
   }
 
   /** Esc / backdrop / ✕ close it (default). Set the `persistent` attribute to require an explicit choice. */
@@ -98,18 +98,18 @@ export class SbxDialog extends ElementBase {
   }
 
   get open(): boolean {
-    return !!this.#root && this.#dialog.open;
+    return !!this._root && this._dialog.open;
   }
 
   /** Opens as a modal. */
   show(): void {
-    if (!this.#root) {
+    if (!this._root) {
       this.setAttribute("open", "");
       return;
     }
-    if (this.#dialog.open) return;
+    if (this._dialog.open) return;
     this.returnValue = "";
-    this.#dialog.showModal();
+    this._dialog.showModal();
     if (!this.hasAttribute("open")) this.setAttribute("open", "");
     const auto = this.querySelector<HTMLElement>("[autofocus]") ?? this.querySelector<HTMLElement>('[slot="footer"].sbx-btn--primary');
     auto?.focus();
@@ -118,73 +118,14 @@ export class SbxDialog extends ElementBase {
 
   /** Closes with an optional return value (also from `data-close="value"` buttons). */
   close(returnValue = ""): void {
-    if (!this.#root || !this.#dialog.open) return;
+    if (!this._root || !this._dialog.open) return;
     this.returnValue = returnValue;
-    this.#dialog.close(returnValue);
+    this._dialog.close(returnValue);
     this.removeAttribute("open");
     emit(this, "close", { returnValue });
   }
 }
 
-define("sbx-dialog", SbxDialog);
-
-export interface ConfirmOptions {
-  heading?: string;
-  confirmLabel?: string;
-  cancelLabel?: string;
-  danger?: boolean;
-}
-
-function tempDialog(heading: string, bodyHtml: string, buttons: string): SbxDialog {
-  const d = document.createElement("sbx-dialog") as SbxDialog;
-  d.setAttribute("heading", heading);
-  d.setAttribute("size", "sm");
-  d.innerHTML = bodyHtml + buttons;
-  document.body.append(d);
-  return d;
-}
-
-/** A modal yes/no question inside the artifact. Resolves true on confirm. */
-export function confirmDialog(message: string, o: ConfirmOptions = {}): Promise<boolean> {
-  const d = tempDialog(
-    o.heading ?? "Are you sure?",
-    `<p style="margin:0">${esc(message)}</p>`,
-    `<button slot="footer" class="sbx-btn" data-close="cancel">${esc(o.cancelLabel ?? "Cancel")}</button>` +
-      `<button slot="footer" class="sbx-btn ${o.danger ? "sbx-btn--danger" : "sbx-btn--primary"}" data-close="ok" autofocus>${esc(o.confirmLabel ?? "OK")}</button>`,
-  );
-  return new Promise((resolve) => {
-    d.addEventListener("close", () => {
-      resolve(d.returnValue === "ok");
-      d.remove();
-    }, { once: true });
-    requestAnimationFrame(() => d.show());
-  });
-}
-
-/** A modal text prompt. Resolves the text, or null when cancelled. */
-export function promptDialog(message: string, o: ConfirmOptions & { value?: string; placeholder?: string } = {}): Promise<string | null> {
-  const d = tempDialog(
-    o.heading ?? message,
-    `${o.heading ? `<p style="margin:0 0 8px">${esc(message)}</p>` : ""}<input class="sbx-input" autofocus value="${esc(o.value ?? "")}" placeholder="${esc(o.placeholder ?? "")}">`,
-    `<button slot="footer" class="sbx-btn" data-close="cancel">${esc(o.cancelLabel ?? "Cancel")}</button>` +
-      `<button slot="footer" class="sbx-btn sbx-btn--primary" data-close="ok">${esc(o.confirmLabel ?? "OK")}</button>`,
-  );
-  const input = d.querySelector("input")!;
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") d.close("ok");
-  });
-  return new Promise((resolve) => {
-    d.addEventListener("close", () => {
-      resolve(d.returnValue === "ok" ? input.value : null);
-      d.remove();
-    }, { once: true });
-    requestAnimationFrame(() => {
-      d.show();
-      input.focus();
-      input.select();
-    });
-  });
-}
 
 // ---- toasts --------------------------------------------------------------
 
@@ -216,14 +157,17 @@ const TOASTER_CSS = `
 `;
 
 export class SbxToaster extends ElementBase {
-  #root!: ShadowRoot;
-  connectedCallback(): void {
-    if (!this.#root) this.#root = shadow(this, TOASTER_CSS, "");
+  _init(): void {
+
+  }
+  declare _root: ShadowRoot;
+  _connected(): void {
+    if (!this._root) this._root = shadow(this, TOASTER_CSS, "");
     this.setAttribute("role", "status");
     this.setAttribute("aria-live", "polite");
   }
   add(message: string, o: ToastOptions = {}): () => void {
-    if (!this.#root) this.connectedCallback();
+    if (!this._root) this._connected();
     const kind = o.kind ?? "info";
     const el = document.createElement("div");
     el.className = `t ${kind}`;
@@ -243,22 +187,11 @@ export class SbxToaster extends ElementBase {
       });
     }
     el.querySelector(".x")!.addEventListener("click", remove);
-    this.#root.append(el);
+    this._root.append(el);
     const t = o.timeout ?? (kind === "error" ? 7000 : 4000);
     if (t > 0) setTimeout(remove, t);
     return remove;
   }
 }
 
-define("sbx-toaster", SbxToaster);
 
-/** Shows a toast inside the artifact. Returns a function that dismisses it. */
-export function toast(message: string, o: ToastOptions | ToastKind = {}): () => void {
-  const opts = typeof o === "string" ? { kind: o } : o;
-  let t = document.querySelector("sbx-toaster") as SbxToaster | null;
-  if (!t) {
-    t = document.createElement("sbx-toaster") as SbxToaster;
-    document.body.append(t);
-  }
-  return t.add(message, opts);
-}

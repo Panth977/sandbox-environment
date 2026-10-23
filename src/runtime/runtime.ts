@@ -8,8 +8,9 @@
  * @module
  */
 import { createEndpoint } from "../bridge.ts";
+import { defineLazy } from "../ui/lazy.ts";
 import type { Endpoint } from "../bridge.ts";
-import type { BootPayload, ConsoleEntry, RuntimeErrorEntry, Theme } from "../protocol.ts";
+import type { BootPayload, ComponentPackRef, ConsoleEntry, RuntimeErrorEntry, Theme } from "../protocol.ts";
 
 interface HostInternal {
   $sbx: {
@@ -64,6 +65,55 @@ function addCss(css: string) {
   const s = document.createElement("style");
   s.textContent = css;
   document.head.append(s);
+}
+
+/** Imports a pack once (with its CSS); later calls share the first. */
+function loadPack(pack: ComponentPackRef): () => Promise<Record<string, unknown>> {
+  let p: Promise<Record<string, unknown>> | null = null;
+  return () =>
+    (p ??= (async () => {
+      if (pack.css) addCss(pack.css);
+      const url = pack.url ?? (pack.source ? URL.createObjectURL(new Blob([pack.source], { type: "text/javascript" })) : null);
+      return url ? ((await import(url)) as Record<string, unknown>) : {};
+    })());
+}
+
+/** A pack whose code loads on first use of one of its tags. */
+function lazyPack(pack: ComponentPackRef) {
+  const load = loadPack(pack);
+  if (pack.elements) {
+    for (const [tag, schema] of Object.entries(pack.elements)) {
+      defineLazy(tag, {
+        ...schema,
+        load: () =>
+          load().then((m) => {
+            const impl = (m.elements as Record<string, CustomElementConstructor> | undefined)?.[tag];
+            if (!impl) throw new Error(`component pack has no elements["${tag}"] export`);
+            return { impl };
+          }),
+      });
+    }
+    return;
+  }
+  const tags = (pack.tags ?? []).map((t) => t.toLowerCase());
+  const selector = tags.join(",");
+  let done = false;
+  const check = (root: ParentNode | Element) => {
+    if (done) return;
+    const hit = (root as Element).localName && tags.includes((root as Element).localName)
+      ? true
+      : !!root.querySelector?.(selector);
+    if (hit) {
+      done = true;
+      mo.disconnect();
+      void load().catch((e) => console.error("[sandbox] component pack failed to load:", e));
+    }
+  };
+  const mo = new MutationObserver((records) => {
+    for (const r of records) for (const n of r.addedNodes) if (n.nodeType === 1) check(n as Element);
+  });
+  mo.observe(document.documentElement, { childList: true, subtree: true });
+  check(document);
 }
 
 async function start() {
@@ -161,9 +211,8 @@ async function start() {
   const uiKey = boot.specifiers["@panth977/sandbox/ui"];
   if (uiKey && urls[uiKey]) await import(urls[uiKey]);
   for (const pack of boot.components) {
-    if (pack.css) addCss(pack.css);
-    const url = pack.url ?? (pack.source ? URL.createObjectURL(new Blob([pack.source], { type: "text/javascript" })) : null);
-    if (url) await import(url);
+    if (pack.elements || pack.tags) lazyPack(pack);
+    else await loadPack(pack)();
   }
   for (const css of boot.artifact.css) addCss(css);
   try {

@@ -110,7 +110,13 @@ function build(files: string[], folders: string[]): Node {
 const VALID = /^[^\\:*?"<>|]+$/;
 
 /** Mounts the explorer into `el`. Call `render(state)` whenever the files change. */
-export function createTree(el: HTMLElement, cb: TreeCallbacks) {
+export interface TreeHandle {
+  render(next?: Partial<TreeState>): void;
+  newFile(): void;
+  newFolder(): void;
+}
+
+export function createTree(el: HTMLElement, cb: TreeCallbacks): TreeHandle {
   el.classList.add("sbx-tree");
   el.innerHTML = `
     <div class="sbx-tree__head"><span>Files</span>

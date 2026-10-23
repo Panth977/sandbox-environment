@@ -343,7 +343,7 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
   async function checkTypes() {
     await lspReady;
     if (!lsp) return;
-    const tsFiles = Object.keys(files).filter((p) => /\.(tsx?|jsx?)$/.test(p));
+    const tsFiles = Object.keys(files).filter((p) => /\.(tsx?|jsx?|svelte)$/.test(p));
     await Promise.all(tsFiles.map(async (p) => {
       const ds = await lsp!.diagnostics(p).catch(() => []);
       tsRanges.set(p, ds);

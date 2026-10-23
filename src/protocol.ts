@@ -118,8 +118,29 @@ export interface ComponentPackRef {
   url?: string;
   /** …the module source itself (loaded as a blob). */
   source?: string;
-  /** Optional CSS injected into the artifact document. */
+  /** Optional CSS injected into the artifact document (with the module, when it loads). */
   css?: string;
+  /**
+   * Lazy, plain pack: the custom-element tags the module defines itself. The
+   * module is imported the first time one of these tags appears in the
+   * document, not at boot.
+   */
+  tags?: string[];
+  /**
+   * Lazy, kit-style pack: the definitions, registered synchronously at boot
+   * (properties, attributes, methods). The module is imported on first render
+   * and must export `elements: { [tag]: ImplementationClass }` written like
+   * the kit's own components (see ui/lazy.ts).
+   */
+  elements?: Record<string, PackElementSchema>;
+}
+
+/** A pack element's synchronous definition. */
+export interface PackElementSchema {
+  props?: string[];
+  attrs?: string[];
+  methods?: string[];
+  formAssociated?: boolean;
 }
 
 /** What the compiler produces and the render engine runs. Plain data, JSON-serialisable. */

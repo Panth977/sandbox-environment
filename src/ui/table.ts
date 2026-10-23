@@ -42,77 +42,81 @@ function cmp(a: unknown, b: unknown): number {
 }
 
 export class SbxTable extends ElementBase {
-  static get observedAttributes(): string[] {
-    return ["selectable", "compact", "striped", "loading", "empty", "max-height"];
+  _init(): void {
+    this._columns = [];
+    this._rows = [];
+    this._sort = null;
+    this._selected = new Set<Row>();
+    this._raf = 0;
   }
-  #columns: Column[] = [];
-  #rows: Row[] = [];
-  #sort: { key: string; dir: "asc" | "desc" } | null = null;
-  #selected = new Set<Row>();
-  #raf = 0;
+  declare _columns: Column[];
+  declare _rows: Row[];
+  declare _sort: { key: string; dir: "asc" | "desc" } | null;
+  declare _selected: Set<any>;
+  declare _raf: number;
 
-  connectedCallback(): void {
+  _connected(): void {
     this.style.display = this.style.display || "block";
-    this.#schedule();
+    this._schedule();
   }
 
-  attributeChangedCallback(): void {
-    this.#schedule();
+  _attributeChanged(): void {
+    this._schedule();
   }
 
   get columns(): Column[] {
-    return this.#columns;
+    return this._columns;
   }
   set columns(v: Column[]) {
-    this.#columns = Array.isArray(v) ? v : [];
-    this.#schedule();
+    this._columns = Array.isArray(v) ? v : [];
+    this._schedule();
   }
 
   get rows(): Row[] {
-    return this.#rows;
+    return this._rows;
   }
   set rows(v: Row[]) {
-    this.#rows = Array.isArray(v) ? v : [];
-    for (const r of [...this.#selected]) if (!this.#rows.includes(r)) this.#selected.delete(r);
-    this.#schedule();
+    this._rows = Array.isArray(v) ? v : [];
+    for (const r of [...this._selected]) if (!this._rows.includes(r)) this._selected.delete(r);
+    this._schedule();
   }
 
   /** Selected rows (with the `selectable` attribute). */
   get selection(): Row[] {
-    return this.#rows.filter((r) => this.#selected.has(r));
+    return this._rows.filter((r) => this._selected.has(r));
   }
   set selection(v: Row[]) {
-    this.#selected = new Set(v);
-    this.#schedule();
+    this._selected = new Set(v);
+    this._schedule();
   }
 
   /** Rows in display order. */
   get sortedRows(): Row[] {
-    if (!this.#sort) return this.#rows;
-    const col = this.#columns.find((c) => c.key === this.#sort!.key);
-    const get = col?.sortValue ?? ((r: Row) => r[this.#sort!.key]);
-    const out = [...this.#rows].sort((a, b) => cmp(get(a), get(b)));
-    return this.#sort.dir === "desc" ? out.reverse() : out;
+    if (!this._sort) return this._rows;
+    const col = this._columns.find((c) => c.key === this._sort!.key);
+    const get = col?.sortValue ?? ((r: Row) => r[this._sort!.key]);
+    const out = [...this._rows].sort((a, b) => cmp(get(a), get(b)));
+    return this._sort.dir === "desc" ? out.reverse() : out;
   }
 
   sortBy(key: string, dir: "asc" | "desc" = "asc"): void {
-    this.#sort = { key, dir };
-    this.#schedule();
+    this._sort = { key, dir };
+    this._schedule();
   }
 
-  #schedule() {
-    if (this.#raf) return;
-    this.#raf = requestAnimationFrame(() => {
-      this.#raf = 0;
-      this.#render();
+  _schedule() {
+    if (this._raf) return;
+    this._raf = requestAnimationFrame(() => {
+      this._raf = 0;
+      this._render();
     });
   }
 
-  #render() {
+  _render() {
     const selectable = this.hasAttribute("selectable");
-    const cols = this.#columns.length
-      ? this.#columns
-      : Object.keys(this.#rows[0] ?? {}).map((key) => ({ key, label: key } as Column));
+    const cols = this._columns.length
+      ? this._columns
+      : Object.keys(this._rows[0] ?? {}).map((key) => ({ key, label: key } as Column));
     const rows = this.sortedRows;
     const wrap = document.createElement("div");
     wrap.className = "sbx-table-wrap";
@@ -130,13 +134,13 @@ export class SbxTable extends ElementBase {
       all.type = "checkbox";
       all.setAttribute("aria-label", "Select all");
       all.style.accentColor = "var(--sbx-accent)";
-      all.checked = rows.length > 0 && rows.every((r) => this.#selected.has(r));
-      all.indeterminate = !all.checked && rows.some((r) => this.#selected.has(r));
+      all.checked = rows.length > 0 && rows.every((r) => this._selected.has(r));
+      all.indeterminate = !all.checked && rows.some((r) => this._selected.has(r));
       all.addEventListener("change", () => {
-        if (all.checked) rows.forEach((r) => this.#selected.add(r));
-        else this.#selected.clear();
+        if (all.checked) rows.forEach((r) => this._selected.add(r));
+        else this._selected.clear();
         emit(this, "selectionchange", { rows: this.selection });
-        this.#schedule();
+        this._schedule();
       });
       th.append(all);
       hr.append(th);
@@ -150,14 +154,14 @@ export class SbxTable extends ElementBase {
         th.style.cursor = "pointer";
         th.style.userSelect = "none";
         th.tabIndex = 0;
-        const on = this.#sort?.key === c.key;
-        th.setAttribute("aria-sort", on ? (this.#sort!.dir === "asc" ? "ascending" : "descending") : "none");
-        if (on) th.textContent += this.#sort!.dir === "asc" ? " ↑" : " ↓";
+        const on = this._sort?.key === c.key;
+        th.setAttribute("aria-sort", on ? (this._sort!.dir === "asc" ? "ascending" : "descending") : "none");
+        if (on) th.textContent += this._sort!.dir === "asc" ? " ↑" : " ↓";
         const toggle = () => {
-          const dir = this.#sort?.key === c.key && this.#sort.dir === "asc" ? "desc" : "asc";
-          this.#sort = { key: c.key, dir };
+          const dir = this._sort?.key === c.key && this._sort.dir === "asc" ? "desc" : "asc";
+          this._sort = { key: c.key, dir };
           emit(this, "sort", { key: c.key, dir });
-          this.#schedule();
+          this._schedule();
         };
         th.addEventListener("click", toggle);
         th.addEventListener("keydown", (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), toggle()));
@@ -187,13 +191,13 @@ export class SbxTable extends ElementBase {
           const cb = document.createElement("input");
           cb.type = "checkbox";
           cb.style.accentColor = "var(--sbx-accent)";
-          cb.checked = this.#selected.has(row);
+          cb.checked = this._selected.has(row);
           cb.setAttribute("aria-label", "Select row");
           cb.addEventListener("click", (e) => e.stopPropagation());
           cb.addEventListener("change", () => {
-            cb.checked ? this.#selected.add(row) : this.#selected.delete(row);
+            cb.checked ? this._selected.add(row) : this._selected.delete(row);
             emit(this, "selectionchange", { rows: this.selection });
-            this.#schedule();
+            this._schedule();
           });
           td.append(cb);
         }
@@ -214,4 +218,3 @@ export class SbxTable extends ElementBase {
   }
 }
 
-define("sbx-table", SbxTable);

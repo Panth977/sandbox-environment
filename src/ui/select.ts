@@ -50,96 +50,98 @@ const CHEV = `<svg class="chev" width="14" height="14" viewBox="0 0 16 16" aria-
 const CHECK = `<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 export class SbxSelect extends ElementBase {
-  static formAssociated = true;
-  static get observedAttributes(): string[] {
-    return ["placeholder", "multiple", "disabled", "value", "searchable", "clearable"];
+  _init(): void {
+    this._options = [];
+    this._fromChildren = true;
+    this._value = undefined;
+    this._values = [];
+    this._active = -1;
+    this._query = "";
+    this._listId = uid("lb");
+    this._mo = null;
+    this._typed = "";
+    this._typedAt = 0;
   }
 
-  #internals: ElementInternals | null = null;
-  #options: SelectOption[] = [];
-  #fromChildren = true;
-  #value: unknown = undefined;
-  #values: unknown[] = [];
-  #active = -1;
-  #query = "";
-  #popup!: Popup;
-  #root!: ShadowRoot;
-  #listId = uid("lb");
-  #mo: MutationObserver | null = null;
-  #typed = "";
-  #typedAt = 0;
+  declare _internals: ElementInternals | null;
+  declare _options: SelectOption[];
+  declare _fromChildren: boolean;
+  declare _value: unknown;
+  declare _values: unknown[];
+  declare _active: number;
+  declare _query: string;
+  declare _popup: Popup;
+  declare _root: ShadowRoot;
+  declare _listId: string;
+  declare _mo: MutationObserver | null;
+  declare _typed: string;
+  declare _typedAt: number;
 
-  constructor() {
-    super();
-    try {
-      this.#internals = this.attachInternals();
-    } catch { /* not form-associated in this browser */ }
-  }
 
-  connectedCallback(): void {
-    if (!this.#root) {
-      this.#root = shadow(this, CSS, `
-        <button class="trigger" part="trigger" type="button" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="${this.#listId}">
+  _connected(): void {
+    if (!this._root) {
+      this._root = shadow(this, CSS, `
+        <button class="trigger" part="trigger" type="button" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="${this._listId}">
           <span class="label" part="label"></span><span class="clear" role="button" hidden aria-label="Clear">✕</span>${CHEV}
         </button>
-        <div class="list" part="listbox" id="${this.#listId}" role="listbox"></div>`);
-      const trigger = this.#trigger;
-      const list = this.#list;
-      this.#popup = new Popup(list, trigger, { matchWidth: true, onClose: () => this.#closed() });
+        <div class="list" part="listbox" id="${this._listId}" role="listbox"></div>`);
+      const trigger = this._trigger;
+      const list = this._list;
+      this._popup = new Popup(list, trigger, { matchWidth: true, onClose: () => this._closed() });
       trigger.addEventListener("click", (e) => {
         if ((e.target as Element).closest(".clear")) {
           e.stopPropagation();
-          this.#commit(this.multiple ? [] : undefined);
+          this._commit(this.multiple ? [] : undefined);
           return;
         }
-        if (!this.disabled) this.#popup.open ? this.#popup.hide() : this.#open();
+        if (!this.disabled) this._popup.open ? this._popup.hide() : this._open();
       });
-      trigger.addEventListener("keydown", (e) => this.#key(e));
+      trigger.addEventListener("keydown", (e) => this._key(e));
       list.addEventListener("pointerdown", (e) => e.preventDefault());
       list.addEventListener("click", (e) => {
         const item = (e.target as Element).closest<HTMLElement>(".item");
-        if (item && item.getAttribute("aria-disabled") !== "true") this.#pick(Number(item.dataset.i));
+        if (item && item.getAttribute("aria-disabled") !== "true") this._pick(Number(item.dataset.i));
       });
       list.addEventListener("pointermove", (e) => {
         const item = (e.target as Element).closest<HTMLElement>(".item");
-        if (item && Number(item.dataset.i) !== this.#active) this.#setActive(Number(item.dataset.i), false);
+        if (item && Number(item.dataset.i) !== this._active) this._setActive(Number(item.dataset.i), false);
       });
     }
-    if (this.#fromChildren) this.#readChildren();
-    this.#mo = new MutationObserver(() => this.#fromChildren && this.#readChildren());
-    this.#mo.observe(this, { childList: true, subtree: true, characterData: true, attributeFilter: ["label", "disabled", "selected"] });
-    this.#renderLabel();
+    if (this._fromChildren) this._readChildren();
+    this._mo = new MutationObserver(() => this._fromChildren && this._readChildren());
+    this._mo.observe(this, { childList: true, subtree: true, characterData: true, attributeFilter: ["label", "disabled", "selected"] });
+    this._renderLabel();
   }
 
-  disconnectedCallback(): void {
-    this.#mo?.disconnect();
-    this.#popup?.hide();
+  _disconnected(): void {
+    this._mo?.disconnect();
+    this._popup?.hide();
   }
 
-  attributeChangedCallback(name: string, _old: string | null, val: string | null): void {
+  _attributeChanged(name: string, _old: string | null, val: string | null): void {
     if (name === "value" && val !== null) {
-      if (this.multiple) this.#values = val ? val.split(",") : [];
-      else this.#value = val;
+      if (this.multiple) this._values = val ? val.split(",") : [];
+      else this._value = val;
     }
-    if (this.#root) this.#renderLabel();
+    if (this._root) this._renderLabel();
   }
 
-  get #trigger(): HTMLButtonElement {
-    return this.#root.querySelector(".trigger")!;
+  get _trigger(): HTMLButtonElement {
+    return this._root.querySelector(".trigger")!;
   }
-  get #list(): HTMLElement {
-    return this.#root.querySelector(".list")!;
+  get _list(): HTMLElement {
+    return this._root.querySelector(".list")!;
   }
 
   /** The options. Setting this stops reading child `<option>`s. */
   get options(): SelectOption[] {
-    return this.#options;
+    return this._options;
   }
   set options(v: SelectOption[]) {
-    this.#fromChildren = false;
-    this.#options = Array.isArray(v) ? v.map((o) => ({ ...o, label: String(o.label ?? o.value) })) : [];
-    this.#renderLabel();
-    if (this.#popup?.open) this.#renderList();
+    this._fromChildren = false;
+    this._options = Array.isArray(v) ? v.map((o) => ({ ...o, label: String(o.label ?? o.value) })) : [];
+    this._renderLabel();
+    if (this._popup?.open) this._renderList();
   }
 
   get multiple(): boolean {
@@ -169,22 +171,22 @@ export class SbxSelect extends ElementBase {
 
   /** Selected value (single) or values (multiple). */
   get value(): unknown {
-    return this.multiple ? [...this.#values] : this.#value;
+    return this.multiple ? [...this._values] : this._value;
   }
   set value(v: unknown) {
-    if (this.multiple) this.#values = Array.isArray(v) ? [...v] : v == null ? [] : [v];
-    else this.#value = v;
-    this.#sync();
-    this.#renderLabel();
+    if (this.multiple) this._values = Array.isArray(v) ? [...v] : v == null ? [] : [v];
+    else this._value = v;
+    this._sync();
+    this._renderLabel();
   }
 
   /** The selected option object(s). */
   get selected(): SelectOption | SelectOption[] | undefined {
-    if (this.multiple) return this.#options.filter((o) => this.#values.includes(o.value));
-    return this.#options.find((o) => o.value === this.#value);
+    if (this.multiple) return this._options.filter((o) => this._values.includes(o.value));
+    return this._options.find((o) => o.value === this._value);
   }
 
-  #readChildren() {
+  _readChildren() {
     const out: SelectOption[] = [];
     const walk = (parent: Element, group?: string) => {
       for (const c of Array.from(parent.children)) {
@@ -193,176 +195,175 @@ export class SbxSelect extends ElementBase {
           const o = c as HTMLOptionElement;
           out.push({ label: o.label || o.textContent || o.value, value: o.value, disabled: o.disabled, group });
           if (o.hasAttribute("selected") && !this.hasAttribute("value")) {
-            if (this.multiple) !this.#values.includes(o.value) && this.#values.push(o.value);
-            else if (this.#value === undefined) this.#value = o.value;
+            if (this.multiple) !this._values.includes(o.value) && this._values.push(o.value);
+            else if (this._value === undefined) this._value = o.value;
           }
         }
       }
     };
     walk(this);
-    this.#options = out;
-    this.#sync();
-    if (this.#root) this.#renderLabel();
+    this._options = out;
+    this._sync();
+    if (this._root) this._renderLabel();
   }
 
-  #sync() {
-    const v = this.multiple ? this.#values : this.#value;
-    if (this.#internals) {
+  _sync() {
+    const v = this.multiple ? this._values : this._value;
+    if (this._internals) {
       if (this.multiple) {
         const fd = new FormData();
         const name = this.getAttribute("name") ?? "";
-        for (const x of this.#values) fd.append(name, String(x));
-        this.#internals.setFormValue(this.#values.length ? fd : null);
-      } else this.#internals.setFormValue(v == null ? null : String(v));
-      const missing = this.hasAttribute("required") && (this.multiple ? this.#values.length === 0 : v == null || v === "");
-      this.#internals.setValidity(missing ? { valueMissing: true } : {}, missing ? "Please choose an option" : "");
+        for (const x of this._values) fd.append(name, String(x));
+        this._internals.setFormValue(this._values.length ? fd : null);
+      } else this._internals.setFormValue(v == null ? null : String(v));
+      const missing = this.hasAttribute("required") && (this.multiple ? this._values.length === 0 : v == null || v === "");
+      this._internals.setValidity(missing ? { valueMissing: true } : {}, missing ? "Please choose an option" : "");
     }
   }
 
-  #renderLabel() {
-    if (!this.#root) return;
-    const label = this.#root.querySelector(".label")!;
+  _renderLabel() {
+    if (!this._root) return;
+    const label = this._root.querySelector(".label")!;
     const sel = this.selected;
     let text = "";
     if (Array.isArray(sel)) text = sel.length === 0 ? "" : sel.length <= 2 ? sel.map((o) => o.label).join(", ") : `${sel.length} selected`;
     else text = sel?.label ?? "";
     label.textContent = text || this.placeholder;
     label.classList.toggle("placeholder", !text);
-    const clear = this.#root.querySelector<HTMLElement>(".clear")!;
+    const clear = this._root.querySelector<HTMLElement>(".clear")!;
     clear.hidden = !(this.hasAttribute("clearable") && text);
-    this.#trigger.disabled = this.disabled;
+    this._trigger.disabled = this.disabled;
   }
 
-  #visible(): number[] {
-    const q = this.#query.trim().toLowerCase();
-    return this.#options.map((_, i) => i).filter((i) => !q || this.#options[i].label.toLowerCase().includes(q));
+  _visible(): number[] {
+    const q = this._query.trim().toLowerCase();
+    return this._options.map((_, i) => i).filter((i) => !q || this._options[i].label.toLowerCase().includes(q));
   }
 
-  #renderList() {
-    const list = this.#list;
-    const vis = this.#visible();
-    let html = this.searchable ? `<input class="search" part="search" placeholder="Search…" aria-label="Search options" value="${esc(this.#query)}">` : "";
+  _renderList() {
+    const list = this._list;
+    const vis = this._visible();
+    let html = this.searchable ? `<input class="search" part="search" placeholder="Search…" aria-label="Search options" value="${esc(this._query)}">` : "";
     let group: string | undefined;
     for (const i of vis) {
-      const o = this.#options[i];
+      const o = this._options[i];
       if (o.group && o.group !== group) html += `<div class="group" role="presentation">${esc(o.group)}</div>`;
       group = o.group;
-      const on = this.multiple ? this.#values.includes(o.value) : o.value === this.#value;
-      html += `<div class="item${i === this.#active ? " active" : ""}" part="option" role="option" id="${this.#listId}-${i}" data-i="${i}"` +
+      const on = this.multiple ? this._values.includes(o.value) : o.value === this._value;
+      html += `<div class="item${i === this._active ? " active" : ""}" part="option" role="option" id="${this._listId}-${i}" data-i="${i}"` +
         ` aria-selected="${on}"${o.disabled ? ' aria-disabled="true"' : ""}><span class="check">${on ? CHECK : ""}</span>` +
         `<span>${esc(o.label)}${o.description ? `<span class="desc">${esc(o.description)}</span>` : ""}</span></div>`;
     }
     if (!vis.length) html += `<div class="empty">No options</div>`;
-    const hadFocus = this.#root.activeElement?.classList.contains("search");
+    const hadFocus = this._root.activeElement?.classList.contains("search");
     list.innerHTML = html;
     if (this.searchable) {
       const s = list.querySelector<HTMLInputElement>(".search")!;
       s.addEventListener("input", () => {
-        this.#query = s.value;
-        const v = this.#visible();
-        this.#active = v.find((i) => !this.#options[i].disabled) ?? -1;
-        this.#renderList();
+        this._query = s.value;
+        const v = this._visible();
+        this._active = v.find((i) => !this._options[i].disabled) ?? -1;
+        this._renderList();
       });
-      s.addEventListener("keydown", (e) => this.#key(e));
-      if (hadFocus || this.#popup.open) {
+      s.addEventListener("keydown", (e) => this._key(e));
+      if (hadFocus || this._popup.open) {
         s.focus();
         s.setSelectionRange(s.value.length, s.value.length);
       }
     }
-    this.#popup.update();
+    this._popup.update();
   }
 
-  #open() {
-    this.#query = "";
-    const sel = this.multiple ? this.#values[0] : this.#value;
-    const idx = this.#options.findIndex((o) => o.value === sel);
-    this.#active = idx >= 0 ? idx : this.#options.findIndex((o) => !o.disabled);
-    this.#trigger.setAttribute("aria-expanded", "true");
-    this.#popup.show();
-    this.#renderList();
-    this.#scrollActive();
-    if (this.searchable) this.#list.querySelector<HTMLInputElement>(".search")?.focus();
+  _open() {
+    this._query = "";
+    const sel = this.multiple ? this._values[0] : this._value;
+    const idx = this._options.findIndex((o) => o.value === sel);
+    this._active = idx >= 0 ? idx : this._options.findIndex((o) => !o.disabled);
+    this._trigger.setAttribute("aria-expanded", "true");
+    this._popup.show();
+    this._renderList();
+    this._scrollActive();
+    if (this.searchable) this._list.querySelector<HTMLInputElement>(".search")?.focus();
   }
 
-  #closed() {
-    this.#trigger?.setAttribute("aria-expanded", "false");
-    this.#trigger?.removeAttribute("aria-activedescendant");
+  _closed() {
+    this._trigger?.setAttribute("aria-expanded", "false");
+    this._trigger?.removeAttribute("aria-activedescendant");
   }
 
-  #setActive(i: number, scroll = true) {
-    this.#active = i;
-    for (const el of this.#list.querySelectorAll(".item")) el.classList.toggle("active", Number((el as HTMLElement).dataset.i) === i);
-    if (i >= 0) this.#trigger.setAttribute("aria-activedescendant", `${this.#listId}-${i}`);
-    if (scroll) this.#scrollActive();
+  _setActive(i: number, scroll = true) {
+    this._active = i;
+    for (const el of this._list.querySelectorAll(".item")) el.classList.toggle("active", Number((el as HTMLElement).dataset.i) === i);
+    if (i >= 0) this._trigger.setAttribute("aria-activedescendant", `${this._listId}-${i}`);
+    if (scroll) this._scrollActive();
   }
 
-  #scrollActive() {
-    this.#list.querySelector(".item.active")?.scrollIntoView({ block: "nearest" });
+  _scrollActive() {
+    this._list.querySelector(".item.active")?.scrollIntoView({ block: "nearest" });
   }
 
-  #pick(i: number) {
-    const o = this.#options[i];
+  _pick(i: number) {
+    const o = this._options[i];
     if (!o || o.disabled) return;
     if (this.multiple) {
-      const has = this.#values.includes(o.value);
-      this.#commit(has ? this.#values.filter((v) => v !== o.value) : [...this.#values, o.value]);
-      this.#renderList();
+      const has = this._values.includes(o.value);
+      this._commit(has ? this._values.filter((v) => v !== o.value) : [...this._values, o.value]);
+      this._renderList();
     } else {
-      this.#commit(o.value);
-      this.#popup.hide();
-      this.#trigger.focus();
+      this._commit(o.value);
+      this._popup.hide();
+      this._trigger.focus();
     }
   }
 
-  #commit(v: unknown) {
-    if (this.multiple) this.#values = Array.isArray(v) ? v : [];
-    else this.#value = v;
-    this.#sync();
-    this.#renderLabel();
+  _commit(v: unknown) {
+    if (this.multiple) this._values = Array.isArray(v) ? v : [];
+    else this._value = v;
+    this._sync();
+    this._renderLabel();
     emit(this, "input", { value: this.value });
     emit(this, "change", { value: this.value });
   }
 
-  #key(e: KeyboardEvent) {
-    const open = this.#popup.open;
-    const vis = this.#visible();
-    const enabled = (j: number) => !this.#options[vis[j]]?.disabled;
+  _key(e: KeyboardEvent): void {
+    const open = this._popup.open;
+    const vis = this._visible();
+    const enabled = (j: number) => !this._options[vis[j]]?.disabled;
     if (["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
       e.preventDefault();
-      if (!open) return this.#open();
-      const pos = vis.indexOf(this.#active);
+      if (!open) return this._open();
+      const pos = vis.indexOf(this._active);
       const next = moveIndex(pos, vis.length, e.key, enabled);
-      if (next >= 0) this.#setActive(vis[next]);
+      if (next >= 0) this._setActive(vis[next]);
     } else if (e.key === "Enter" || (e.key === " " && !this.searchable)) {
       e.preventDefault();
-      if (!open) this.#open();
-      else if (this.#active >= 0) this.#pick(this.#active);
+      if (!open) this._open();
+      else if (this._active >= 0) this._pick(this._active);
     } else if (e.key === "Escape" && open) {
       e.preventDefault();
       e.stopPropagation();
-      this.#popup.hide();
-      this.#trigger.focus();
+      this._popup.hide();
+      this._trigger.focus();
     } else if (e.key === "Tab" && open) {
-      this.#popup.hide();
+      this._popup.hide();
     } else if (!this.searchable && e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
       const now = Date.now();
-      this.#typed = now - this.#typedAt > 600 ? e.key.toLowerCase() : this.#typed + e.key.toLowerCase();
-      this.#typedAt = now;
-      const i = this.#options.findIndex((o) => !o.disabled && o.label.toLowerCase().startsWith(this.#typed));
-      if (i >= 0) open ? this.#setActive(i) : this.#commit(this.multiple ? this.#values : this.#options[i].value);
+      this._typed = now - this._typedAt > 600 ? e.key.toLowerCase() : this._typed + e.key.toLowerCase();
+      this._typedAt = now;
+      const i = this._options.findIndex((o) => !o.disabled && o.label.toLowerCase().startsWith(this._typed));
+      if (i >= 0) open ? this._setActive(i) : this._commit(this.multiple ? this._values : this._options[i].value);
     }
   }
 
   // form-associated callbacks
-  formResetCallback(): void {
-    this.#values = [];
-    this.#value = undefined;
-    this.#sync();
-    this.#renderLabel();
+  _formReset(): void {
+    this._values = [];
+    this._value = undefined;
+    this._sync();
+    this._renderLabel();
   }
-  formDisabledCallback(disabled: boolean): void {
+  _formDisabled(disabled: boolean): void {
     this.disabled = disabled;
   }
 }
 
-define("sbx-select", SbxSelect);
