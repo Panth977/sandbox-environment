@@ -216,6 +216,7 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
     <div class="sbx-dev__status">
       <button data-s="pos" title="Cursor">Ln 1, Col 1</button><span data-s="lang"></span>
       <button data-s="problems" title="Problems"><span class="e">✖ 0</span> <span class="w">▲ 0</span></button>
+      <span data-s="types" title="Type checking and completions"></span>
       <span class="spacer"></span><span data-s="build"></span>
     </div>`;
   container.append(root);
@@ -311,6 +312,7 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
       return {};
     }
   };
+  let typesState = "";
   let lsp: Remote<LanguageService> | null = null;
   let worker: Worker | null = null;
   let lspReady: Promise<void> = Promise.resolve();
@@ -319,14 +321,17 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
       const url = options.languageWorker ?? new URL("./language-worker.js", import.meta.url);
       worker = moduleWorker(url);
       lsp = createEndpoint<LanguageService>(worker as unknown as Parameters<typeof createEndpoint>[0]).remote;
+      typesState = "Loading TypeScript…";
       lspReady = (async () => {
         await lsp!.init({ typescriptUrl: options.typescriptUrl });
         await lsp!.setHostTypes(options.hostTypes ?? "");
         await lsp!.setFiles(files, deps());
+        typesState = "Types ready";
       })().catch((e) => {
         lsp = null;
+        typesState = "Types unavailable";
         console.warn("[sandbox dev] type checking unavailable:", e);
-      });
+      }).finally(() => updateStatus());
       editor.completions = async (pos) => {
         await lspReady;
         return lsp ? await lsp.completions(current, pos) : null;
@@ -518,6 +523,7 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
     $<HTMLElement>('[data-s="lang"]').textContent = current ? LANGUAGE_NAMES[languageOf(current)] ?? "" : "";
     $<HTMLElement>('[data-s="problems"]').innerHTML = `<span class="e">✖ ${e}</span> <span class="w">▲ ${w}</span>`;
     $<HTMLElement>('[data-s="build"]').textContent = lastBuild;
+    $<HTMLElement>('[data-s="types"]').textContent = typesState;
   }
 
   // ---- events -------------------------------------------------------------
