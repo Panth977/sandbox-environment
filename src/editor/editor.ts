@@ -14,7 +14,8 @@
  * ```
  * Keys: Tab / Shift+Tab indent, Enter keeps indentation, brackets and quotes
  * auto-close, Ctrl/Cmd+/ toggles comments, Ctrl+Space opens completions,
- * Ctrl/Cmd+S fires a `save` event.
+ * Ctrl/Cmd+F finds and replaces, Ctrl/Cmd+S fires a `save` event.
+ * Events: `change` `{ value }`, `cursor` `{ line, column, selected }`, `save`.
  *
  * @module
  */
@@ -69,6 +70,24 @@ textarea::selection { background: color-mix(in srgb, var(--sbx-accent) 30%, tran
 .pop .item.active { background: var(--sbx-accent-soft); }
 .pop .detail { margin-left: auto; color: var(--sbx-muted); overflow: hidden; text-overflow: ellipsis; }
 .pop .kind { color: var(--sbx-subtle); width: 14px; }
+textarea:focus, textarea:focus-visible { outline: none; }
+.line-hl { position: absolute; left: 0; right: 0; height: 20px; background: color-mix(in srgb, var(--sbx-accent) 6%, transparent); pointer-events: none; }
+.findhl { color: transparent; }
+.findhl mark { color: transparent; background: color-mix(in srgb, var(--sbx-warning) 35%, transparent); border-radius: 2px; }
+.findhl mark.cur { background: color-mix(in srgb, var(--sbx-warning) 70%, transparent); }
+.find { position: absolute; top: 6px; right: 16px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px;
+  max-width: calc(100% - 32px); background: var(--sbx-surface); border: 1px solid var(--sbx-line); border-radius: var(--sbx-radius);
+  box-shadow: var(--sbx-shadow); font-family: var(--sbx-font); font-size: 12px; }
+.find[hidden] { display: none; }
+.find input { width: 160px; height: 24px; padding: 0 6px; border: 1px solid var(--sbx-line); border-radius: 4px; background: var(--sbx-bg);
+  color: var(--sbx-text); font: 12px var(--sbx-font-mono); outline: none; }
+.find input:focus { border-color: var(--sbx-accent); }
+.find button { all: unset; height: 24px; min-width: 24px; padding: 0 6px; box-sizing: border-box; display: inline-grid; place-items: center;
+  border-radius: 4px; cursor: pointer; color: var(--sbx-muted); }
+.find button:hover { background: var(--sbx-surface-2); color: var(--sbx-text); }
+.find button[aria-pressed="true"] { background: var(--sbx-accent-soft); color: var(--sbx-accent); }
+.find .count { min-width: 64px; color: var(--sbx-muted); text-align: center; }
+.find .row { display: flex; align-items: center; gap: 4px; width: 100%; }
 .hover { position: fixed; z-index: 11; max-width: 520px; padding: 6px 8px; background: var(--sbx-surface); border: 1px solid var(--sbx-line);
   border-radius: var(--sbx-radius); box-shadow: var(--sbx-shadow); font-size: 12px; white-space: pre-wrap; display: none; }
 .hover .msg { color: var(--sbx-danger); }
@@ -106,10 +125,20 @@ export class SbxEditor extends ElementBase {
         <div class="scroll" part="scroll"><div class="content">
           <div class="gutter" part="gutter" aria-hidden="true"></div>
           <div class="layers">
-            <pre class="code" aria-hidden="true"></pre><pre class="diag" aria-hidden="true"></pre>
+            <div class="line-hl" aria-hidden="true"></div>
+            <pre class="findhl" aria-hidden="true"></pre><pre class="code" aria-hidden="true"></pre><pre class="diag" aria-hidden="true"></pre>
             <textarea spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" aria-label="Code editor"></textarea>
           </div>
         </div></div>
+        <div class="find" hidden role="search">
+          <div class="row"><input class="q" placeholder="Find" aria-label="Find" spellcheck="false">
+            <button data-f="case" title="Match case" aria-pressed="false">Aa</button>
+            <span class="count"></span>
+            <button data-f="prev" title="Previous (Shift+Enter)">↑</button><button data-f="next" title="Next (Enter)">↓</button>
+            <button data-f="close" title="Close (Esc)">✕</button></div>
+          <div class="row"><input class="r" placeholder="Replace" aria-label="Replace" spellcheck="false">
+            <button data-f="one" title="Replace">Replace</button><button data-f="all" title="Replace all">All</button></div>
+        </div>
         <div class="pop" role="listbox"></div><div class="hover" role="tooltip"></div>`);
       this.#ta = this.#root.querySelector("textarea")!;
       this.#code = this.#root.querySelector(".code")!;
@@ -121,6 +150,7 @@ export class SbxEditor extends ElementBase {
       this.#ta.addEventListener("input", () => {
         this.#value = this.#ta.value;
         this.#schedule();
+        if (!this.#root.querySelector<HTMLElement>(".find")!.hidden) this.#search(false);
         emit(this, "change", { value: this.#value });
         this.#maybeComplete(false);
       });
@@ -128,6 +158,9 @@ export class SbxEditor extends ElementBase {
       this.#ta.addEventListener("blur", () => setTimeout(() => this.#closePop(), 150));
       this.#ta.addEventListener("click", () => this.#closePop());
       this.#ta.addEventListener("keyup", () => this.#markCursorLine());
+      this.#ta.addEventListener("mouseup", () => this.#markCursorLine());
+      this.#ta.addEventListener("select", () => this.#markCursorLine());
+      this.#wireFind();
       this.#ta.addEventListener("mousemove", (e) => this.#hoverAt(e));
       this.#ta.addEventListener("mouseleave", () => this.#hideHover());
       this.#pop.addEventListener("mousedown", (e) => {
@@ -157,6 +190,7 @@ export class SbxEditor extends ElementBase {
     this.#value = String(v ?? "");
     if (this.#ta && this.#ta.value !== this.#value) this.#ta.value = this.#value;
     this.#schedule();
+    if (this.#root && !this.#root.querySelector<HTMLElement>(".find")!.hidden) this.#search(false);
   }
 
   get language(): Language {
@@ -274,12 +308,161 @@ export class SbxEditor extends ElementBase {
     this.#markCursorLine();
   }
 
+  #lastCursor = "";
   #markCursorLine() {
     if (!this.#ta) return;
-    const line = this.#value.slice(0, this.#ta.selectionStart).split("\n").length;
+    const before = this.#value.slice(0, this.#ta.selectionStart);
+    const line = before.split("\n").length;
+    const column = this.#ta.selectionStart - (before.lastIndexOf("\n") + 1) + 1;
     const prev = this.#gutter.querySelector(".cur");
     prev?.classList.remove("cur");
     this.#gutter.children[line - 1]?.classList.add("cur");
+    const hl = this.#root.querySelector<HTMLElement>(".line-hl")!;
+    hl.style.top = `${8 + (line - 1) * 20}px`;
+    const selected = this.#ta.selectionEnd - this.#ta.selectionStart;
+    const key = `${line}:${column}:${selected}`;
+    if (key !== this.#lastCursor) {
+      this.#lastCursor = key;
+      emit(this, "cursor", { line, column, selected });
+    }
+  }
+
+  // ---- find / replace -----------------------------------------------------
+  #matches: [number, number][] = [];
+  #current = -1;
+  #caseSensitive = false;
+
+  /** Opens the find bar (Ctrl/Cmd+F), prefilled with the selection. */
+  openFind(): void {
+    const bar = this.#root.querySelector<HTMLElement>(".find")!;
+    const q = bar.querySelector<HTMLInputElement>(".q")!;
+    const sel = this.#value.slice(this.#ta.selectionStart, this.#ta.selectionEnd);
+    if (sel && !sel.includes("\n")) q.value = sel;
+    bar.hidden = false;
+    bar.querySelector<HTMLElement>(".row:last-child")!.hidden = this.readOnly;
+    q.focus();
+    q.select();
+    this.#search(true);
+  }
+
+  closeFind(): void {
+    const bar = this.#root.querySelector<HTMLElement>(".find")!;
+    bar.hidden = true;
+    this.#matches = [];
+    this.#renderFind();
+    this.#ta.focus();
+  }
+
+  #wireFind() {
+    const bar = this.#root.querySelector<HTMLElement>(".find")!;
+    const q = bar.querySelector<HTMLInputElement>(".q")!;
+    const r = bar.querySelector<HTMLInputElement>(".r")!;
+    q.addEventListener("input", () => this.#search(true));
+    const keys = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        this.closeFind();
+      } else if (e.key === "Enter" && e.target === q) {
+        e.preventDefault();
+        this.#step(e.shiftKey ? -1 : 1);
+      } else if (e.key === "Enter" && e.target === r) {
+        e.preventDefault();
+        this.#replace(false);
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+        e.preventDefault();
+        q.select();
+      }
+    };
+    q.addEventListener("keydown", keys);
+    r.addEventListener("keydown", keys);
+    bar.addEventListener("click", (e) => {
+      const f = (e.target as Element).closest<HTMLElement>("button")?.dataset.f;
+      if (f === "close") this.closeFind();
+      if (f === "next") this.#step(1);
+      if (f === "prev") this.#step(-1);
+      if (f === "one") this.#replace(false);
+      if (f === "all") this.#replace(true);
+      if (f === "case") {
+        this.#caseSensitive = !this.#caseSensitive;
+        bar.querySelector('[data-f="case"]')!.setAttribute("aria-pressed", String(this.#caseSensitive));
+        this.#search(true);
+      }
+    });
+  }
+
+  #search(fromCursor: boolean) {
+    const q = this.#root.querySelector<HTMLInputElement>(".find .q")!.value;
+    this.#matches = [];
+    if (q) {
+      const hay = this.#caseSensitive ? this.#value : this.#value.toLowerCase();
+      const needle = this.#caseSensitive ? q : q.toLowerCase();
+      for (let i = hay.indexOf(needle); i >= 0 && this.#matches.length < 5000; i = hay.indexOf(needle, i + Math.max(1, needle.length))) {
+        this.#matches.push([i, i + needle.length]);
+      }
+    }
+    if (fromCursor) {
+      const at = this.#ta.selectionStart;
+      this.#current = this.#matches.length ? Math.max(0, this.#matches.findIndex(([s]) => s >= at)) : -1;
+    } else if (this.#current >= this.#matches.length) this.#current = this.#matches.length - 1;
+    this.#renderFind();
+    this.#reveal();
+  }
+
+  #step(d: number) {
+    if (!this.#matches.length) return;
+    this.#current = (this.#current + d + this.#matches.length) % this.#matches.length;
+    this.#renderFind();
+    this.#reveal();
+  }
+
+  #reveal() {
+    const m = this.#matches[this.#current];
+    if (!m) return;
+    const line = this.#value.slice(0, m[0]).split("\n").length;
+    const scroll = this.#root.querySelector<HTMLElement>(".scroll")!;
+    const y = (line - 1) * 20;
+    if (y < scroll.scrollTop + 20 || y > scroll.scrollTop + scroll.clientHeight - 60) scroll.scrollTop = Math.max(0, y - scroll.clientHeight / 3);
+    this.#ta.setSelectionRange(m[0], m[1]);
+    this.#markCursorLine();
+  }
+
+  #replace(all: boolean) {
+    if (this.readOnly || !this.#matches.length) return;
+    const r = this.#root.querySelector<HTMLInputElement>(".find .r")!.value;
+    if (all) {
+      let out = "";
+      let pos = 0;
+      for (const [a, b] of this.#matches) {
+        out += this.#value.slice(pos, a) + r;
+        pos = b;
+      }
+      this.insert(out + this.#value.slice(pos), 0, this.#value.length);
+    } else {
+      const m = this.#matches[this.#current];
+      if (!m) return;
+      this.insert(r, m[0], m[1]);
+    }
+    this.#root.querySelector<HTMLInputElement>(".find .q")!.focus();
+    this.#search(false);
+  }
+
+  #renderFind() {
+    const el = this.#root.querySelector<HTMLElement>(".findhl")!;
+    const count = this.#root.querySelector<HTMLElement>(".find .count")!;
+    const q = this.#root.querySelector<HTMLInputElement>(".find .q")!.value;
+    count.textContent = !q ? "" : this.#matches.length ? `${this.#current + 1} of ${this.#matches.length}` : "No results";
+    if (!this.#matches.length) {
+      el.textContent = "";
+      return;
+    }
+    const v = this.#value;
+    let html = "";
+    let pos = 0;
+    this.#matches.forEach(([a, b], i) => {
+      html += esc(v.slice(pos, a)) + `<mark${i === this.#current ? ' class="cur"' : ""}>${esc(v.slice(a, b))}</mark>`;
+      pos = b;
+    });
+    el.innerHTML = html + esc(v.slice(pos)) + "\n";
   }
 
   #lineStart(pos: number) {
@@ -306,6 +489,16 @@ export class SbxEditor extends ElementBase {
         this.#closePop();
         return;
       }
+    }
+    if (mod && e.key === "f") {
+      e.preventDefault();
+      this.openFind();
+      return;
+    }
+    if (e.key === "Escape" && !this.#root.querySelector<HTMLElement>(".find")!.hidden) {
+      e.preventDefault();
+      this.closeFind();
+      return;
     }
     if (mod && e.key === "s") {
       e.preventDefault();

@@ -84,6 +84,57 @@ CHECKS.dev = async function (r, expect, page) {
   const h2 = await page.waitForFunction(async () => true, null, { timeout: 1000 }).then(() =>
     page.frameLocator(".sbx-dev__preview iframe").locator("#h").filter({ hasText: "sensors" }).textContent({ timeout: 20000 })).catch(() => null);
   expect(h2 === "2 sensors", `rebuild after edit (${h2})`);
+
+  // ---- the explorer ----
+  const tree = page.locator(".sbx-tree__body");
+  const names = await tree.locator(".sbx-tree__row .sbx-tree__name").allTextContents();
+  expect(["App.tsx", "index.tsx", "manifest.json"].every((n) => names.includes(n)), `tree lists files (${names})`);
+  // new file inside a new folder, typed inline
+  await page.locator(".sbx-tree__head [data-act=new-file]").click();
+  await tree.locator(".sbx-tree__input").fill("components/Chart.tsx");
+  await tree.locator(".sbx-tree__input").press("Enter");
+  let files = await page.evaluate(() => Object.keys(window.__dev.files()).sort());
+  expect(files.includes("/components/Chart.tsx"), `new file created (${files})`);
+  expect(await tree.locator(".sbx-tree__row[data-folder=true]", { hasText: "components" }).count() === 1, "folder shown in tree");
+  expect(await page.locator(".sbx-dev__tab[aria-selected=true]").textContent().then((t) => t.includes("Chart.tsx")), "new file opened in a tab");
+  const content = await page.evaluate(() => window.__dev.files()["/components/Chart.tsx"]);
+  expect(content.includes("export function Chart()"), `new .tsx starts as a component (${content})`);
+  // rename by double click
+  await tree.locator('.sbx-tree__row[data-path="/components/Chart.tsx"]').dblclick();
+  await tree.locator(".sbx-tree__input").fill("Bars.tsx");
+  await tree.locator(".sbx-tree__input").press("Enter");
+  files = await page.evaluate(() => Object.keys(window.__dev.files()).sort());
+  expect(files.includes("/components/Bars.tsx") && !files.includes("/components/Chart.tsx"), `rename (${files})`);
+  // rename the folder moves its files
+  await tree.locator('.sbx-tree__row[data-path="/components"]').dblclick();
+  await tree.locator(".sbx-tree__input").fill("ui");
+  await tree.locator(".sbx-tree__input").press("Enter");
+  files = await page.evaluate(() => Object.keys(window.__dev.files()).sort());
+  expect(files.includes("/ui/Bars.tsx"), `folder rename moves files (${files})`);
+  // delete (with the confirm dialog)
+  await tree.locator('.sbx-tree__row[data-path="/ui/Bars.tsx"]').hover();
+  await tree.locator('.sbx-tree__row[data-path="/ui/Bars.tsx"] [data-act=delete]').click();
+  await page.locator("sbx-dialog button[data-close=ok]").click();
+  await page.waitForTimeout(200);
+  files = await page.evaluate(() => Object.keys(window.__dev.files()).sort());
+  expect(!files.includes("/ui/Bars.tsx"), `delete (${files})`);
+  // tabs: close one
+  const before = await page.locator(".sbx-dev__tab").count();
+  await page.locator(".sbx-dev__tab", { hasText: "index.tsx" }).hover();
+  await page.locator(".sbx-dev__tab", { hasText: "index.tsx" }).locator(".x").click();
+  expect(await page.locator(".sbx-dev__tab").count() === before - 1, "tab closes");
+  // find in the editor
+  await tree.locator('.sbx-tree__row[data-path="/App.tsx"]').click();
+  await page.evaluate(() => document.querySelector("sbx-editor").openFind());
+  await page.locator("sbx-editor .find .q").fill("rows");
+  const count = await page.locator("sbx-editor .find .count").textContent();
+  expect(/^1 of [2-9]/.test(count), `find counts matches (${count})`);
+  await page.locator("sbx-editor .find .q").press("Escape");
+  // status bar
+  const pos = await page.locator(".sbx-dev__status [data-s=pos]").textContent();
+  expect(/^Ln \d+, Col \d+/.test(pos), `status shows cursor (${pos})`);
+  const lang = await page.locator(".sbx-dev__status [data-s=lang]").textContent();
+  expect(lang === "TypeScript JSX", `status shows language (${lang})`);
 };
 
 CHECKS.ui = async function (r, expect, page) {

@@ -6,7 +6,7 @@
 //
 //   node e2e/run.mjs [page] [--browser chromium|firefox|webkit]
 import { createRequire } from "node:module";
-import { existsSync } from "node:fs";
+import { appendFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { serve } from "./server.mjs";
@@ -38,6 +38,7 @@ for (const name of browsers) {
     const pageErrors = [];
     p.on("pageerror", (e) => pageErrors.push(String(e)));
     p.on("console", (m) => m.type() === "error" && pageErrors.push("console: " + m.text()));
+    if (process.env.CONSOLE_LOG) p.on("console", (m) => appendFileSync(process.env.CONSOLE_LOG, `[${m.type()}] ${m.text()}\n`));
     let results;
     try {
       await p.goto(`${base}/e2e/pages/${page}.html`);

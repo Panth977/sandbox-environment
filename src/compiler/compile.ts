@@ -175,22 +175,22 @@ const BUILTIN: Plugin[] = [
     async transform(code, path, ctx) {
       const ts = await ctx.typescript();
       const isJsx = /\.(tsx|jsx)$/.test(path);
-      const r = ts.transpileModule(code, {
-        fileName: path,
-        reportDiagnostics: true,
-        compilerOptions: {
-          target: 99, // ESNext
-          module: 99, // ESNext
-          jsx: isJsx ? 4 : undefined, // react-jsx
-          jsxImportSource: ctx.options.jsx,
-          inlineSourceMap: ctx.options.sourcemap,
-          inlineSources: ctx.options.sourcemap,
-          verbatimModuleSyntax: false,
-          isolatedModules: true,
-          useDefineForClassFields: true,
-          experimentalDecorators: false,
-        },
-      });
+      const compilerOptions: Record<string, unknown> = {
+        target: 99, // ESNext
+        module: 99, // ESNext
+        inlineSourceMap: ctx.options.sourcemap,
+        inlineSources: ctx.options.sourcemap,
+        verbatimModuleSyntax: false,
+        isolatedModules: true,
+        useDefineForClassFields: true,
+        experimentalDecorators: false,
+      };
+      // Only JSX files get JSX settings: TypeScript rejects `jsx: undefined` with a warning.
+      if (isJsx) {
+        compilerOptions.jsx = 4; // react-jsx
+        compilerOptions.jsxImportSource = ctx.options.jsx;
+      }
+      const r = ts.transpileModule(code, { fileName: path, reportDiagnostics: true, compilerOptions });
       for (const d of r.diagnostics ?? []) {
         const msg = typeof d.messageText === "string" ? d.messageText : ts.flattenDiagnosticMessageText?.(d.messageText, "\n") ?? String(d.messageText);
         const lc = d.start != null ? lineCol(code, d.start) : undefined;

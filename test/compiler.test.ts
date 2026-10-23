@@ -98,3 +98,9 @@ test("Svelte via svelte/compiler", { skip: !TS && "svelte not found" }, async ()
   assert.ok(r.artifact!.modules["sbx:/App.svelte.js"].includes("svelte/internal/client"));
   assert.match(r.artifact!.imports["svelte/internal/client"], /^https:\/\/esm\.sh\/svelte@5\/internal\/client$/);
 });
+
+test("plain .ts files compile without JSX warnings", { skip: !TS && "typescript not found" }, async () => {
+  const r = await compile({ "/index.ts": `const a: number = 1;\nexport default a;` }, { typescript: async () => TS, sourcemap: false });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.diagnostics, []);
+});
