@@ -45,7 +45,7 @@ var runtimes = map[string]runtimeDef{
 
 func allowedImage(image string) bool {
 	repo := regexp.MustCompile(`[:@].*$`).ReplaceAllString(image, "")
-	for _, r := range []string{"node", "oven/bun", "denoland/deno", "python", "alpine"} {
+	for _, r := range []string{directImage, "node", "oven/bun", "denoland/deno", "python", "alpine"} {
 		if repo == r {
 			return true
 		}
@@ -59,6 +59,9 @@ var (
 )
 
 func (d *Daemon) pinned(image string) (string, error) {
+	if d.direct() {
+		return directImage, nil
+	}
 	inspect := func() string {
 		out, _ := exec.Command(d.cfg.Docker, "image", "inspect", "-f", `{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}`, image).Output()
 		return strings.TrimSpace(string(out))
@@ -447,6 +450,16 @@ func (d *Daemon) compile(cl *client, in *wire.CompileInput) (*wire.CompileResult
 		res.Diagnostics = ds
 		return res, nil
 	}
+	if d.direct() {
+		if r := in.Environment.Runtime; r != "node" && r != "deno" && r != "sh" {
+			res.Diagnostics = []wire.Diagnostic{diag("schema", "this host runs node, deno and sh only")}
+			return res, nil
+		}
+		if len(in.Environment.Dependencies) > 0 {
+			res.Diagnostics = []wire.Diagnostic{diag("schema", "this host has no network for dependencies")}
+			return res, nil
+		}
+	}
 	lim := Resolve(in.Limits, CompileDefaults(), cl.ceiling())
 	entry := in.Environment.Entry
 	if entry == "" {
@@ -491,10 +504,10 @@ func (d *Daemon) compile(cl *client, in *wire.CompileInput) (*wire.CompileResult
 		for _, f := range in.Files {
 			usesNode = usesNode || strings.Contains(f.Content, "node:")
 		}
-		if deps || usesNode {
+		if (deps || usesNode) && !d.direct() {
 			allow = runtimes["node"].registry
 		}
-		script := "exec 1>&2\nexport DENO_DIR=/build/deno\nset -e\ncd /src\ndeno check --no-lock --config .sbx/deno.check.json .sbx/globals.d.ts " + entry + "\n"
+		script := "exec 1>&2\nexport DENO_DIR=/build/deno\nset -e\n[ -d /opt/deno-cache ] && cp -r /opt/deno-cache /build/deno\ncd /src\ndeno check --no-lock --config .sbx/deno.check.json .sbx/globals.d.ts " + entry + "\n"
 		r, err := d.step(id+"-t", deno, script, nil, lim, src, allow)
 		if err != nil {
 			return nil, err

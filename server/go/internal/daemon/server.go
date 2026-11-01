@@ -53,6 +53,9 @@ func (d *Daemon) remove(in *Instance) {
 // Sweep removes containers and networks of daemons that died, and anything past its
 // expiry. Runs at start and every 30 s, so a crash leaves nothing burning CPU.
 func (d *Daemon) Sweep() {
+	if d.direct() {
+		return // a direct sandbox is a child process: it cannot outlive this daemon by much
+	}
 	out, err := exec.Command(d.cfg.Docker, "ps", "-a", "--filter", "label=sbx=1", "--format", `{{.Names}}|{{.Label "sbx.daemon"}}|{{.Label "sbx.expires"}}`).Output()
 	if err != nil {
 		return

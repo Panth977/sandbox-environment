@@ -22,6 +22,8 @@ import (
 
 // Config is how one sandboxd runs.
 type Config struct {
+	Driver      string // "docker", or "direct": gVisor with no Docker, for Cloud Run
+	Runsc       string // runsc binary, direct driver
 	Docker      string // docker CLI
 	DockerSock  string // for stats when cgroup files are out of reach
 	Runtime     string // "runsc" in production
@@ -63,6 +65,7 @@ type proc struct {
 	mu      sync.Mutex
 	usage   wire.Usage
 	pidsHit bool
+	memHit  bool
 	done    chan struct{}
 }
 
@@ -108,7 +111,13 @@ func (p *proc) args() []string {
 }
 
 func (p *proc) start() (stdin io.WriteCloser, stdout, stderr io.ReadCloser, err error) {
-	p.cmd = exec.Command(p.d.cfg.Docker, p.args()...)
+	if p.d.direct() {
+		if p.cmd, err = p.directCmd(); err != nil {
+			return
+		}
+	} else {
+		p.cmd = exec.Command(p.d.cfg.Docker, p.args()...)
+	}
 	if p.spec.stdin {
 		if stdin, err = p.cmd.StdinPipe(); err != nil {
 			return
@@ -137,7 +146,7 @@ func (p *proc) kill(reason string) {
 			if p.cmd == nil {
 				return
 			}
-			c := exec.Command(p.d.cfg.Docker, "kill", p.spec.name)
+			c := p.signal("KILL")
 			if err := c.Start(); err != nil {
 				p.cmd.Process.Kill()
 				return
@@ -158,14 +167,14 @@ func (p *proc) kill(reason string) {
 func (p *proc) stop(graceMs int64) {
 	reason := "stopped"
 	p.reason.CompareAndSwap(nil, &reason)
-	exec.Command(p.d.cfg.Docker, "kill", "-s", "TERM", p.spec.name).Run()
+	p.signal("TERM").Run()
 	if graceMs <= 0 {
 		graceMs = 2000
 	}
 	select {
 	case <-p.done:
 	case <-time.After(time.Duration(graceMs) * time.Millisecond):
-		exec.Command(p.d.cfg.Docker, "kill", p.spec.name).Run()
+		p.signal("KILL").Run()
 	}
 }
 
@@ -186,7 +195,7 @@ func (p *proc) update(f func(u *wire.Usage)) {
 // startCPUMs is the CPU a run may use before it reports ready.
 const startCPUMs = 15000
 
-type stats struct{ cpuUsec, mem, peak, pids, pidsMax int64 }
+type stats struct{ cpuUsec, mem, peak, pids, pidsMax, memFail int64 }
 
 var statRe = regexp.MustCompile(`usage_usec (\d+)`)
 
@@ -262,6 +271,9 @@ func (d *Daemon) apiStats(id string) (stats, bool) {
 }
 
 func (p *proc) inspectID() string {
+	if p.d.direct() {
+		return p.spec.name
+	}
 	out, err := exec.Command(p.d.cfg.Docker, "inspect", "-f", "{{.Id}}", p.spec.name).Output()
 	if err != nil {
 		return ""
@@ -294,14 +306,16 @@ func (p *proc) watch() {
 			}
 			if id == "" {
 				id = p.inspectID()
-				if id != "" {
+				if id != "" && !p.d.direct() {
 					dir = cgroupDir(id)
 				}
 				continue
 			}
 			var s stats
 			var ok bool
-			if dir != "" {
+			if p.d.direct() {
+				s, ok = readCgroupV1(p.spec.name)
+			} else if dir != "" {
 				s, ok = readCgroup(dir)
 			} else if now.Sub(last) >= 500*time.Millisecond {
 				s, ok = p.d.apiStats(id)
@@ -324,6 +338,9 @@ func (p *proc) watch() {
 				u.MemoryMbSeconds += float64(s.mem) / mib * dt
 				if s.pidsMax > 0 {
 					p.pidsHit = true
+				}
+				if s.memFail > 0 {
+					p.memHit = true
 				}
 			})
 			cpuMs := s.cpuUsec / 1000
@@ -352,25 +369,31 @@ func (p *proc) breach(limit, reason string, used, max int64) {
 
 // wait ends the run, says why it ended and removes the container.
 func (p *proc) wait() wire.ExitInfo {
-	p.cmd.Wait()
+	err := p.cmd.Wait()
 	close(p.done)
 	var state struct {
 		ExitCode  int
 		OOMKilled bool
 	}
-	out, _ := exec.Command(p.d.cfg.Docker, "inspect", "-f", "{{json .State}}", p.spec.name).Output()
-	json.Unmarshal(bytes.TrimSpace(out), &state)
-	exec.Command(p.d.cfg.Docker, "rm", "-f", "-v", p.spec.name).Run()
+	if p.d.direct() {
+		state.ExitCode = p.cmd.ProcessState.ExitCode()
+		_ = err
+		p.cleanDirect()
+	} else {
+		out, _ := exec.Command(p.d.cfg.Docker, "inspect", "-f", "{{json .State}}", p.spec.name).Output()
+		json.Unmarshal(bytes.TrimSpace(out), &state)
+		exec.Command(p.d.cfg.Docker, "rm", "-f", "-v", p.spec.name).Run()
+	}
 	u := p.snapshot()
 	p.mu.Lock()
-	pids := p.pidsHit
+	pids, mem := p.pidsHit, p.memHit
 	p.mu.Unlock()
 	code := state.ExitCode
 	reason := "crash"
 	switch r := p.reason.Load(); {
 	case r != nil:
 		reason = *r
-	case state.OOMKilled || code == 137:
+	case state.OOMKilled || code == 137 || (mem && code != 0):
 		reason = "memory"
 	case pids && code != 0:
 		reason = "pids"

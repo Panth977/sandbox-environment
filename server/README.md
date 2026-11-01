@@ -104,6 +104,16 @@ sudo ./sandboxd --socket /run/sandboxd.sock --data-dir /var/lib/sandboxd
 
 The Docker daemon needs `{"runtimes": {"runsc": {"path": "/usr/local/bin/runsc"}}}`. `sandboxd` refuses any other runtime unless you pass `--unsafe-no-gvisor`, which is for local development only. Remote parents: `--tls-addr :7443 --tls-cert c.pem --tls-key k.pem` with `SANDBOXD_TOKEN` set.
 
+### Without Docker: Cloud Run
+
+`--driver direct` runs gVisor itself, with no Docker. It is made for Cloud Run gen2, where the container is root inside a microVM, so user code sits behind gVisor and the microVM.
+
+```sh
+sandboxd --driver direct --socket /tmp/sandboxd.sock --data-dir /var/lib/sandboxd
+```
+
+The image needs `runsc`, `node` and `deno`, with empty `/app`, `/src` and `/build` folders. Differences: Node, Deno and sh only; no network for sandboxes, so no dependencies; `cpus` is not enforced, because Cloud Run refuses a CPU quota, so its instance size bounds speed while `cpuBurst` and `cpuBudgetMs` still kill.
+
 ## Safety
 
 - Run it on a dedicated machine with no secrets and no route to private networks. Never on the server of your app.

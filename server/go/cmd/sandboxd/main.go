@@ -24,6 +24,8 @@ func main() {
 	flag.StringVar(&c.TLSAddr, "tls-addr", "", "host:port for TLS parents")
 	flag.StringVar(&c.TLSCert, "tls-cert", "", "TLS certificate file")
 	flag.StringVar(&c.TLSKey, "tls-key", "", "TLS key file")
+	flag.StringVar(&c.Driver, "driver", "docker", "docker, or direct: gVisor with no Docker (Cloud Run)")
+	flag.StringVar(&c.Runsc, "runsc", "runsc", "runsc binary, direct driver")
 	flag.StringVar(&c.Docker, "docker", "docker", "docker CLI")
 	flag.StringVar(&c.DockerSock, "docker-sock", "/var/run/docker.sock", "docker socket, for stats")
 	flag.StringVar(&c.Runtime, "runtime", "runsc", "container runtime")

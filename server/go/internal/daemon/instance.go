@@ -640,6 +640,9 @@ func (in *Instance) startProxy(n *wire.Network) error {
 // address: an IP, because Docker's embedded DNS does not work inside gVisor. The proxy is
 // our own code holding no secrets, and it needs that DNS, so it runs on runc, not gVisor.
 func (d *Daemon) startProxy(name, netName string, allow []string, max int64, on func(proxyEvent)) (string, error) {
+	if d.direct() {
+		return "", fmt.Errorf("this host has no network for sandboxes")
+	}
 	if d.cfg.ProxyBinary == "" {
 		return "", fmt.Errorf("network.allow needs --proxy-binary")
 	}
