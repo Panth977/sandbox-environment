@@ -40,6 +40,19 @@ for (const file of walk(SRC)) {
   count++;
 }
 
+// The backend sandbox parent SDK: server/ts plus the shared peer, flattened into dist/server.
+mkdirSync(join(DIST, "server"), { recursive: true });
+for (const f of readdirSync(join(ROOT, "server", "ts"))) {
+  if (!f.endsWith(".ts")) continue;
+  const js = stripTypeScriptTypes(readFileSync(join(ROOT, "server", "ts", f), "utf8"), { mode: "strip" })
+    .replace(SPEC, "$1$2$3.js$2").replace("../go/kits/js/peer.mjs", "./peer.mjs");
+  writeFileSync(join(DIST, "server", f.replace(/\.ts$/, ".js")), js);
+  count++;
+}
+for (const f of ["peer.mjs", "peer.d.ts"]) {
+  writeFileSync(join(DIST, "server", f), readFileSync(join(ROOT, "server", "go", "kits", "js", f)));
+}
+
 const css = await import(pathToFileURL(join(DIST, "ui", "css.js")).href);
 writeFileSync(join(DIST, "kit.css"), css.KIT_CSS);
 const html = await import(pathToFileURL(join(DIST, "host", "html.js")).href);

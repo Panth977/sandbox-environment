@@ -2,7 +2,8 @@
 
 Run untrusted mini-apps ("artifacts") inside any web app — sandboxed, two-way
 connected to the host through a typed API — and give people the tools to write
-and compile them in the browser. **Zero runtime dependencies.** Web standards only;
+and compile them in the browser. For backend code in any language, see the
+[backend sandbox](server/README.md): the same model, with hard CPU, memory and network limits. **Zero runtime dependencies.** Web standards only;
 the dev tools load TypeScript, the Svelte compiler and the Monaco editor from a CDN when used.
 
 ```

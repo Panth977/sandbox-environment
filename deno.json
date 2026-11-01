@@ -1,6 +1,6 @@
 {
   "name": "@panth977/sandbox",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "license": "Apache-2.0",
   "exports": {
     ".": "./src/mod.ts",
@@ -19,13 +19,18 @@
     "./dev": "./src/dev/mod.ts",
     "./dev/language-worker": "./src/dev/language-worker.ts",
     "./compiler/worker": "./src/compiler/worker.ts",
-    "./cli": "./src/compiler/cli.ts"
+    "./cli": "./src/compiler/cli.ts",
+    "./server/node": "./server/ts/node.ts",
+    "./server/deno": "./server/ts/deno.ts"
   },
   "publish": {
     "include": [
       "src/**/*.ts",
       "README.md",
-      "LICENSE"
+      "LICENSE",
+      "server/ts/*.ts",
+      "server/go/kits/js/peer.mjs",
+      "server/go/kits/js/peer.d.ts"
     ],
     "exclude": [
       "src/**/*.test.ts"
@@ -58,7 +63,9 @@
     "e2e": "node e2e/run.mjs",
     "build": "node scripts/build.mjs",
     "deps": "node scripts/check-deps.mjs",
-    "ci": "node scripts/gen.mjs --check && node scripts/check-deps.mjs && deno check src/ && deno task test && node scripts/build.mjs"
+    "ci": "node scripts/gen.mjs --check && node scripts/check-deps.mjs && deno check src/ server/ts/node.ts && deno task test && node scripts/build.mjs",
+    "server:test": "cd server/go && go vet ./... && go test ./...",
+    "server:e2e": "node --experimental-strip-types --no-warnings server/e2e/e2e.ts"
   },
   "nodeModulesDir": "none"
 }

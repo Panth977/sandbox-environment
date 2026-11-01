@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["DOM", "ESNext"],
+    "strict": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "skipLibCheck": true,
+    "noCheck": true,
+    "types": [],
+    "outDir": "dist/server",
+    "rootDir": "server/ts"
+  },
+  "files": ["server/ts/node.ts", "server/ts/deno.ts"]
+}

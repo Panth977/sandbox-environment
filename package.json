@@ -1,7 +1,7 @@
 {
   "name": "@panth977/sandbox",
-  "version": "0.2.3",
-  "description": "Run untrusted mini-apps (artifacts) inside any web app: sandboxed render engine, typed bridge, UI kit, in-browser compiler and dev engine. Zero dependencies.",
+  "version": "0.3.0",
+  "description": "Run untrusted code safely: browser mini-apps and backend code, with typed bridges, limits, in-browser compiler and dev engine. Zero dependencies.",
   "license": "Apache-2.0",
   "type": "module",
   "repository": {
@@ -89,7 +89,15 @@
       "import": "./dist/compiler/cli.js"
     },
     "./kit.css": "./dist/kit.css",
-    "./runtime.html": "./dist/runtime.html"
+    "./runtime.html": "./dist/runtime.html",
+    "./server/node": {
+      "types": "./dist/server/node.d.ts",
+      "import": "./dist/server/node.js"
+    },
+    "./server/deno": {
+      "types": "./dist/server/deno.d.ts",
+      "import": "./dist/server/deno.js"
+    }
   },
   "bin": {
     "sbx": "./dist/compiler/cli.js"

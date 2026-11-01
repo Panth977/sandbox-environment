@@ -1,0 +1,1 @@
+{"compilerOptions":{"strict":true,"noEmit":true,"target":"ES2022","module":"ESNext","moduleResolution":"bundler","allowImportingTsExtensions":true,"lib":["ES2023","DOM"],"types":["node"],"typeRoots":["../../node_modules/@types"]},"files":["server.ts"]}

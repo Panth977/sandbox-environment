@@ -11,7 +11,10 @@ jobs:
         with: { deno-version: v2.x }
       - run: node scripts/gen.mjs --check
       - run: node scripts/check-deps.mjs
-      - run: deno check src/
+      - run: deno check src/ server/ts/node.ts
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.23' }
+      - run: cd server/go && go vet ./... && go test ./...
       - run: node --experimental-strip-types --no-warnings --test --test-timeout=20000 test/*.test.ts
       - run: node scripts/build.mjs
       # the published types as an Angular 15 app sees them (TypeScript 4.8, moduleResolution "node")
