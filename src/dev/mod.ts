@@ -64,6 +64,8 @@ export interface DevOptions extends Omit<MountOptions, "artifact" | "size"> {
   readOnly?: boolean;
   /** File opened first. Default: the entry. */
   open?: string;
+  /** false = editor only: no browser compile and no preview, for code that runs elsewhere. */
+  preview?: boolean;
   onChange?(files: SourceFiles): void;
   onSave?(files: SourceFiles): void;
   onBuild?(result: CompileResult): void;
@@ -85,6 +87,8 @@ export interface DevHandle {
   readonly editor: any;
   /** Moves the cursor (1-based) in the open file and focuses the editor. */
   goTo(line: number, column?: number): void;
+  /** Shows problems from a compile that ran elsewhere, in the editor and the Problems panel. */
+  setProblems(problems: Diagnostic[]): void;
   destroy(): void;
 }
 
@@ -113,6 +117,9 @@ const CSS = `
 .sbx-dev__run { align-self: center; }
 .sbx-dev__main { display: grid; grid-template-columns: var(--dev-tree) 4px minmax(0, 1fr) 5px var(--dev-preview); min-height: 0; }
 .sbx-dev--no-tree .sbx-dev__main { grid-template-columns: 0 0 minmax(0, 1fr) 5px var(--dev-preview); }
+.sbx-dev--no-preview .sbx-dev__main { grid-template-columns: var(--dev-tree) 4px minmax(0, 1fr) 0 0; }
+.sbx-dev--no-preview.sbx-dev--no-tree .sbx-dev__main { grid-template-columns: 0 0 minmax(0, 1fr) 0 0; }
+.sbx-dev--no-preview .sbx-dev__preview, .sbx-dev--no-preview .sbx-dev__split--preview { visibility: hidden; }
 .sbx-dev--no-tree .sbx-dev__tree, .sbx-dev--no-tree .sbx-dev__split--tree { visibility: hidden; }
 .sbx-dev--right .sbx-dev__main { grid-template-columns: var(--dev-preview) 5px minmax(0, 1fr) 4px var(--dev-tree); }
 .sbx-dev--right.sbx-dev--no-tree .sbx-dev__main { grid-template-columns: var(--dev-preview) 5px minmax(0, 1fr) 0 0; }
@@ -222,7 +229,7 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
   /** Empty folders made in the explorer (folders with files come from the paths). */
   const folders = new Set<string>();
   const root = document.createElement("div");
-  root.className = "sbx-dev" + (options.layout === "code-right" ? " sbx-dev--right" : "");
+  root.className = "sbx-dev" + (options.layout === "code-right" ? " sbx-dev--right" : "") + (options.preview === false ? " sbx-dev--no-preview" : "");
   root.innerHTML = `
     <div class="sbx-dev__bar">
       <button class="sbx-dev__icon" data-act="explorer" title="Show / hide files" aria-pressed="true">☰</button>
@@ -617,6 +624,10 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
 
   let lastBuild = "";
   async function build(): Promise<CompileResult> {
+    if (options.preview === false) {
+      await checkTypes();
+      return { ok: true, diagnostics: [], files: [] };
+    }
     const my = ++buildSeq;
     msg.className = "sbx-dev__msg";
     msg.textContent = "Building…";
@@ -814,6 +825,14 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
     ready,
     get editor() {
       return editor;
+    },
+    setProblems(problems) {
+      compileProblems = problems.map((d) => ({ ...d }));
+      panel = "problems";
+      syncEditorDiagnostics();
+      renderTree();
+      renderTabs();
+      renderPanel();
     },
     goTo(line, column = 1) {
       if (!editor) return;
