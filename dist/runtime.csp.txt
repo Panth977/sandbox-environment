@@ -1,0 +1,1 @@
+default-src 'none'; script-src 'nonce-YeD9sXp50y1m3OBG7Fq0hO' blob:; style-src 'unsafe-inline' blob:; connect-src 'none'; img-src data: blob:; font-src data:; media-src data: blob:; worker-src blob:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'
