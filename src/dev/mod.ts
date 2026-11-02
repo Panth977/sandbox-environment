@@ -66,6 +66,10 @@ export interface DevOptions extends Omit<MountOptions, "artifact" | "size"> {
   open?: string;
   /** false = editor only: no browser compile and no preview, for code that runs elsewhere. */
   preview?: boolean;
+  /** Files that open read-only, in an editor that is otherwise writable. */
+  readOnlyPaths?(path: string): boolean;
+  /** Files the browser compile sees. Default: all. The rest stay editable, and compile elsewhere. */
+  compileFilter?(path: string): boolean;
   onChange?(files: SourceFiles): void;
   onSave?(files: SourceFiles): void;
   onBuild?(result: CompileResult): void;
@@ -119,6 +123,7 @@ const CSS = `
 .sbx-dev--no-tree .sbx-dev__main { grid-template-columns: 0 0 minmax(0, 1fr) 5px var(--dev-preview); }
 .sbx-dev--no-preview .sbx-dev__main { grid-template-columns: var(--dev-tree) 4px minmax(0, 1fr) 0 0; }
 .sbx-dev--no-preview.sbx-dev--no-tree .sbx-dev__main { grid-template-columns: 0 0 minmax(0, 1fr) 0 0; }
+.sbx-dev--no-preview .sbx-dev__run { display: none; }
 .sbx-dev--no-preview .sbx-dev__preview, .sbx-dev--no-preview .sbx-dev__split--preview { visibility: hidden; }
 .sbx-dev--no-tree .sbx-dev__tree, .sbx-dev--no-tree .sbx-dev__split--tree { visibility: hidden; }
 .sbx-dev--right .sbx-dev__main { grid-template-columns: var(--dev-preview) 5px minmax(0, 1fr) 4px var(--dev-tree); }
@@ -268,6 +273,7 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
   let openTabs: string[] = [];
   let preview: ArtifactHandle<any> | null = null;
   let compileProblems: Problem[] = [];
+  let remoteProblems: Problem[] = [];
   const tsProblems = new Map<string, Problem[]>();
   const tsRanges = new Map<string, LspDiagnostic[]>();
   let consoleRows: { level: string; text: string }[] = [];
@@ -578,6 +584,7 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
       emptyEditor.hidden = true;
       if (switching) {
         editor.setModel(modelFor(path));
+        editor.updateOptions({ readOnly: !!options.readOnly || !!options.readOnlyPaths?.(path) });
         const vs = viewStates.get(path);
         if (vs) editor.restoreViewState(vs);
       }
@@ -632,9 +639,11 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
     msg.className = "sbx-dev__msg";
     msg.textContent = "Building…";
     const t0 = performance.now();
-    const result = await compile(files, options.compile);
+    const keep = options.compileFilter;
+    const input = keep ? Object.fromEntries(Object.entries(files).filter(([p]) => keep(p))) : files;
+    const result = await compile(input, options.compile);
     if (destroyed || my !== buildSeq) return result;
-    compileProblems = result.diagnostics.map((d: Diagnostic) => ({ ...d, severity: d.severity }));
+    compileProblems = [...result.diagnostics.map((d: Diagnostic) => ({ ...d, severity: d.severity })), ...remoteProblems];
     const ms = Math.round(performance.now() - t0);
     if (result.ok && result.artifact) {
       msg.className = "sbx-dev__msg ok";
@@ -827,8 +836,10 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
       return editor;
     },
     setProblems(problems) {
-      compileProblems = problems.map((d) => ({ ...d }));
-      panel = "problems";
+      const before = new Set(remoteProblems);
+      remoteProblems = problems.map((d) => ({ ...d }));
+      compileProblems = [...compileProblems.filter((p) => !before.has(p)), ...remoteProblems];
+      if (remoteProblems.length) panel = "problems";
       syncEditorDiagnostics();
       renderTree();
       renderTabs();
