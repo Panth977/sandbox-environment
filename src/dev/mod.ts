@@ -48,6 +48,8 @@ export interface DevOptions extends Omit<MountOptions, "artifact" | "size"> {
   files: SourceFiles;
   /** `.d.ts` text describing the host API for artifact authors. */
   hostTypes?: string;
+  /** `.d.ts` text that defines modules of its own (`declare module "x" { … }`). hostTypes only adds to existing ones. */
+  ambientTypes?: string;
   compile?: CompileOptions;
   /** URL of the language worker module (`dev/language-worker.js`), or false to turn type checking off. */
   languageWorker?: string | URL | false;
@@ -367,6 +369,7 @@ export function mountDev(container: HTMLElement, options: DevOptions): DevHandle
       lspReady = (async () => {
         await lsp!.init({ typescriptUrl: options.typescriptUrl });
         await lsp!.setHostTypes(options.hostTypes ?? "");
+        await lsp!.setAmbientTypes(options.ambientTypes ?? "");
         await lsp!.setFiles(files, deps());
         typesState = "Types ready";
       })().catch((e) => {

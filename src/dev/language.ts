@@ -67,6 +67,8 @@ export interface LanguageService {
   setFiles(files: Record<string, string>, dependencies?: Record<string, string>): Promise<void>;
   setFile(path: string, text: string): Promise<void>;
   setHostTypes(dts: string): Promise<void>;
+  /** Declarations that stand alone: `declare module "x"` here defines x. */
+  setAmbientTypes(dts: string): Promise<void>;
   diagnostics(path: string): Promise<LspDiagnostic[]>;
   completions(path: string, pos: number): Promise<{ from: number; items: { label: string; kind: string; detail?: string }[] } | null>;
   /** The full picture of one completion item: its signature, an object's members, the docs. */
@@ -162,6 +164,7 @@ export function createLanguageService(): LanguageService {
     libs.set("/types/sbx-assets.d.ts", ASSET_TYPES);
     libs.set("/types/sbx-svelte.d.ts", SVELTE_RUNE_TYPES);
     if (!libs.has("/types/host.d.ts")) libs.set("/types/host.d.ts", "export {};\n");
+    if (!libs.has("/types/ambient.d.ts")) libs.set("/types/ambient.d.ts", "");
   }
 
   const paths: Record<string, string[]> = {};
@@ -193,7 +196,7 @@ export function createLanguageService(): LanguageService {
   function makeService() {
     const host = {
       getProjectVersion: () => String(projectVersion),
-      getScriptFileNames: () => [...files.keys(), "/types/sbx-ui.d.ts", "/types/sbx-assets.d.ts", "/types/sbx-svelte.d.ts", "/types/host.d.ts"],
+      getScriptFileNames: () => [...files.keys(), "/types/ambient.d.ts", "/types/sbx-ui.d.ts", "/types/sbx-assets.d.ts", "/types/sbx-svelte.d.ts", "/types/host.d.ts"],
       getScriptVersion: (f: string) => String(files.get(f)?.version ?? 0),
       getScriptSnapshot: (f: string) => {
         const t = files.get(f)?.text ?? libs.get(f);
@@ -451,6 +454,10 @@ export function createLanguageService(): LanguageService {
       // must be a module so `declare module "@panth977/sandbox/artifact"` augments instead of replacing
       const text = dts || "";
       libs.set("/types/host.d.ts", /^\s*(import|export)\b/m.test(text) ? text : text + "\nexport {};\n");
+      projectVersion++;
+    },
+    async setAmbientTypes(dts) {
+      libs.set("/types/ambient.d.ts", dts || "");
       projectVersion++;
     },
     async diagnostics(path) {
